@@ -7,7 +7,7 @@ from PySide6.QtCore import QThread, Signal
 from PySide6.QtGui import QImage
 
 from . import config
-from .camera import Camera
+from .camera import Camera, CameraError
 from .hand_tracker import HAND_CONNECTIONS, INDEX_FINGER_TIP, Detection, HandTracker, ModelError
 from .metrics import RateCounter, TimingStat
 
@@ -79,3 +79,23 @@ class TrackingWorker(QThread):
     def dropped(self) -> int:
         """Camera frames that were overwritten before the tracker could process them."""
         return max(self._camera.frames_read - self.processed, 0)
+
+
+class CameraOpener(QThread):
+    """Closes the previous camera and opens a new one off the UI thread (USB cameras can take seconds)."""
+    opened = Signal(object)  # CameraInfo
+    failed = Signal(str)
+
+    def __init__(self, camera: Camera, index: int):
+        super().__init__()
+        self._camera = camera
+        self._index = index
+
+    def run(self) -> None:
+        try:
+            self.opened.emit(self._camera.open(self._index))
+        except CameraError as exc:
+            self.failed.emit(str(exc))
+        except Exception as exc:
+            log.exception("Unexpected camera open failure")
+            self.failed.emit(f"Camera error: {exc}")

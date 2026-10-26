@@ -9,9 +9,9 @@ from PySide6.QtWidgets import (
 
 from . import config
 from .calibration import CORNER_NAMES, CalibrationError, CoordinateMapper
-from .camera import Camera, CameraError, list_cameras
+from .camera import Camera, list_cameras
 from .drawing import DrawingState
-from .worker import TrackingWorker
+from .worker import CameraOpener, TrackingWorker
 
 log = logging.getLogger(__name__)
 
@@ -77,6 +77,7 @@ class MainWindow(QWidget):
         self.calibrating = False
         self.message = ""
         self.camera_unavailable = False
+        self.opener: CameraOpener | None = None
         self._build_ui()
         self._refresh_cameras()
         self.timer = QTimer(self, interval=250, timeout=self._update_diagnostics)
@@ -153,11 +154,13 @@ class MainWindow(QWidget):
 
     def _on_camera_selected(self, _row: int):
         """Switch to the newly selected camera immediately if one is already running."""
-        if self.worker is not None:
-            self._stop_camera()
+        if self.worker is not None and self.opener is None:
+            self._stop_worker()  # the opener closes the old camera in the background
             self._start_camera()
 
     def _toggle_camera(self):
+        if self.opener is not None:
+            return
         if self.worker is not None:
             self._stop_camera()
         else:
@@ -168,13 +171,35 @@ class MainWindow(QWidget):
         if index is None:
             self.message = "No camera selected. Connect the USB camera and press Refresh."
             return
-        try:
-            info = self.camera.open(index)
-        except CameraError as exc:
-            log.error("%s", exc)
-            self.camera_unavailable = True
-            self.message = str(exc)
-            return
+        self.camera_unavailable = False
+        self.message = f"Opening camera {index}…"
+        self._set_busy(True)
+        self.preview.setPixmap(QPixmap())
+        self.preview.setText("Opening camera…")
+        self.opener = CameraOpener(self.camera, index)
+        self.opener.opened.connect(self._on_opened)
+        self.opener.failed.connect(self._on_open_failed)
+        self.opener.start()
+
+    def _set_busy(self, busy: bool):
+        self.start_btn.setEnabled(not busy)
+        self.camera_box.setEnabled(not busy)
+        self.status.setText("Opening camera…" if busy else self.status.text())
+
+    def _finish_open(self):
+        self.opener.wait()
+        self.opener = None
+        self._set_busy(False)
+
+    def _on_open_failed(self, msg: str):
+        log.error("%s", msg)
+        self._finish_open()
+        self.camera_unavailable = True
+        self.message = msg
+        self.start_btn.setText("Start Camera")
+
+    def _on_opened(self, info):
+        self._finish_open()
         self.mapper.set_frame_size((info.width, info.height))
         self.worker = TrackingWorker(self.camera)
         self.worker.mirror = self.mirror_chk.isChecked()
@@ -182,14 +207,16 @@ class MainWindow(QWidget):
         self.worker.failed.connect(self._on_failed)
         self.worker.start()
         self.start_btn.setText("Stop Camera")
-        self.camera_unavailable = False
         self.message = ""
 
     def _stop_camera(self):
+        self._stop_worker()
+        self.camera.close()
+
+    def _stop_worker(self):
         if self.worker is not None:
             self.worker.stop()
             self.worker = None
-        self.camera.close()
         self.state.update(None)
         self.last_tip_raw = None
         self._cancel_calibration()
@@ -287,7 +314,9 @@ class MainWindow(QWidget):
             self._stop_camera()
             self.camera_unavailable = True
             self.message = self.camera.error
-        if w is None:
+        if self.opener is not None:
+            status = "Opening camera…"
+        elif w is None:
             status = "Camera unavailable" if self.camera_unavailable else "Camera stopped"
         elif not self.state.draw_enabled:
             status = "Paused"
@@ -313,5 +342,7 @@ class MainWindow(QWidget):
         )
 
     def closeEvent(self, event):
+        if self.opener is not None:
+            self.opener.wait()
         self._stop_camera()
         super().closeEvent(event)

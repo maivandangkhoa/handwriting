@@ -13,6 +13,7 @@ CAMERA_REQUEST_WIDTH = 1280
 CAMERA_REQUEST_HEIGHT = 720
 CAMERA_REQUEST_FPS = 30
 CAMERA_PROBE_COUNT = 4          # indices 0..N-1 are probed
+CAMERA_WARMUP_SECONDS = 3.0       # how long to retry the first frame before giving up
 CAMERA_MAX_READ_FAILURES = 30   # consecutive failed reads before declaring the camera lost
 
 # Logical canvas size (strokes are stored in this space and scaled to the widget).

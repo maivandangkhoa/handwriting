@@ -144,8 +144,8 @@ class MainWindow(QWidget):
     def _refresh_cameras(self):
         self.camera_box.clear()
         found = list_cameras() if self.worker is None else []
-        for i in found:
-            self.camera_box.addItem(f"Camera {i}", i)
+        for i, w, h in found:
+            self.camera_box.addItem(f"Camera {i} ({w}x{h})", i)
         if not found and self.worker is None:
             self.camera_unavailable = True
             self.message = "No camera found. Connect the USB camera and grant camera permission, then Refresh."

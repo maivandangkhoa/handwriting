@@ -2,6 +2,7 @@
 import logging
 import sys
 import threading
+import time
 from dataclasses import dataclass
 
 import cv2
@@ -29,14 +30,26 @@ def _open_capture(index: int) -> cv2.VideoCapture:
     return cv2.VideoCapture(index, backend)
 
 
-def list_cameras(count: int = config.CAMERA_PROBE_COUNT) -> list[int]:
-    """Indices that open and deliver a frame. Briefly opens each camera."""
+def _read_with_warmup(cap: cv2.VideoCapture, timeout: float = config.CAMERA_WARMUP_SECONDS):
+    """First reads often fail while the camera starts up (common with USB cameras); retry until timeout."""
+    deadline = time.monotonic() + timeout
+    while True:
+        ok, frame = cap.read()
+        if ok and frame is not None:
+            return frame
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(0.05)
+
+
+def list_cameras(count: int = config.CAMERA_PROBE_COUNT) -> list[tuple[int, int, int]]:
+    """(index, width, height) of cameras that open and deliver a frame. Briefly opens each camera."""
     found = []
     for i in range(count):
         cap = _open_capture(i)
         try:
-            if cap.isOpened() and cap.read()[0]:
-                found.append(i)
+            if cap.isOpened() and (frame := _read_with_warmup(cap)) is not None:
+                found.append((i, frame.shape[1], frame.shape[0]))
         finally:
             cap.release()
     return found
@@ -71,8 +84,8 @@ class Camera:
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAMERA_REQUEST_HEIGHT)
         cap.set(cv2.CAP_PROP_FPS, config.CAMERA_REQUEST_FPS)
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        ok, frame = cap.read()
-        if not ok or frame is None:
+        frame = _read_with_warmup(cap)
+        if frame is None:
             cap.release()
             raise CameraError(f"Camera {index} opened but returned no frame (permission denied or busy?).")
         h, w = frame.shape[:2]

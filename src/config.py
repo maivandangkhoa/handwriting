@@ -26,6 +26,9 @@ MIN_DETECTION_CONFIDENCE = 0.5
 MIN_PRESENCE_CONFIDENCE = 0.5
 MIN_TRACKING_CONFIDENCE = 0.5
 
+# Mirror the camera by default? Off suits a camera that faces the same way as the user (e.g. aimed at the screen).
+DEFAULT_MIRROR = False
+
 # Smoothing: exponential moving average weight of the newest point (1.0 = off).
 SMOOTHING_ALPHA = 0.5
 

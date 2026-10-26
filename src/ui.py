@@ -1,7 +1,7 @@
 """PySide6 main window: canvas, preview, controls, diagnostics, calibration flow."""
 import logging
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QSettings, Qt, QTimer
 from PySide6.QtGui import QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
@@ -30,7 +30,10 @@ class MainWindow(QWidget):
         self.chess_mode = False
         self.pinch = PinchDetector()
         self.pointer_smoother = Smoother(config.SMOOTHING_ALPHA)
-        self.mapper = CoordinateMapper((config.CAMERA_REQUEST_WIDTH, config.CAMERA_REQUEST_HEIGHT), CANVAS_SIZE)
+        self.settings = QSettings("FingerTrace", "FingerTrace")
+        mirror = self.settings.value("mirror", config.DEFAULT_MIRROR, type=bool)
+        self.mapper = CoordinateMapper((config.CAMERA_REQUEST_WIDTH, config.CAMERA_REQUEST_HEIGHT), CANVAS_SIZE,
+                                       mirror=mirror)
         self.last_tip_raw: tuple[float, float] | None = None
         self.calib_points: list[tuple[float, float]] = []
         self.calibrating = False
@@ -71,7 +74,7 @@ class MainWindow(QWidget):
         self.draw_chk.setChecked(True)
         self.draw_chk.toggled.connect(self.state.set_draw_enabled)
         self.mirror_chk = QCheckBox("Mirror Camera")
-        self.mirror_chk.setChecked(True)
+        self.mirror_chk.setChecked(self.mapper.mirror)  # before connecting, so it does not fire the handler
         self.mirror_chk.toggled.connect(self._on_mirror)
         clear = QPushButton("Clear Canvas")
         clear.clicked.connect(self.state.clear)
@@ -255,6 +258,7 @@ class MainWindow(QWidget):
         self.canvas.update()
 
     def _on_mirror(self, on: bool):
+        self.settings.setValue("mirror", on)
         self.mapper.set_mirror(on)  # also invalidates calibration (stored in view coordinates)
         if self.worker is not None:
             self.worker.mirror = on

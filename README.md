@@ -38,9 +38,9 @@ Requested 1280x720 @ 30 FPS; the actual values are read back and shown in Diagno
 ## Using it
 - **Draw Enabled** off = *Paused* (cursor still follows, nothing is drawn). **Clear Canvas** removes all strokes.
 - Losing the hand ends the stroke; when it returns a new stroke starts, so no long connecting line.
-- **Mirror Camera** (default on): preview behaves like a mirror, so moving your finger to your left moves the
-  cursor left. With it off, the raw camera view is used (left/right swapped if the camera faces you).
-  Toggling mirror resets calibration.
+- **Mirror Camera** (default off, remembered between runs): off = raw camera view, correct when the camera looks
+  the same way you do (e.g. aimed at the screen). On = selfie-style mirror, correct when the camera faces you.
+  If the stroke moves opposite to your hand, flip this checkbox. Toggling mirror resets calibration.
 - **Calibrate**: point your fingertip at each highlighted target (TL, TR, BR, BL) and press **Space** /
   *Confirm Point*; Esc cancels. Points are checked (duplicates, wrong order, degenerate area) and a homography
   (`cv2.getPerspectiveTransform`) maps the camera quadrilateral to the canvas. Without calibration the app shows

@@ -99,6 +99,7 @@ class MainWindow(QWidget):
         self.diag.setStyleSheet("font-family: Menlo, monospace;")
 
         self.camera_box = QComboBox()
+        self.camera_box.activated.connect(self._on_camera_selected)  # user-driven only, not programmatic changes
         refresh = QPushButton("Refresh")
         refresh.clicked.connect(self._refresh_cameras)
         self.start_btn = QPushButton("Start Camera")
@@ -149,6 +150,12 @@ class MainWindow(QWidget):
         if not found and self.worker is None:
             self.camera_unavailable = True
             self.message = "No camera found. Connect the USB camera and grant camera permission, then Refresh."
+
+    def _on_camera_selected(self, _row: int):
+        """Switch to the newly selected camera immediately if one is already running."""
+        if self.worker is not None:
+            self._stop_camera()
+            self._start_camera()
 
     def _toggle_camera(self):
         if self.worker is not None:

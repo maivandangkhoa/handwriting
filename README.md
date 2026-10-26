@@ -1,0 +1,67 @@
+# FingerTrace PoC
+
+**Air-drawing, not touchscreen input.** A USB camera sees your index fingertip in front of the screen; the app
+draws its path on a canvas. CPU-only, fully local, no accounts or network (except the explicit model download).
+
+```mermaid
+flowchart LR
+  A[USB camera<br/>camera.py thread, latest-frame slot] --> B[TrackingWorker<br/>worker.py QThread]
+  B --> C[MediaPipe Hand Landmarker<br/>hand_tracker.py]
+  C --> D[fingertip landmark 8, raw px]
+  D --> E[CoordinateMapper<br/>calibration.py]
+  E --> F[DrawingState<br/>smoothing + strokes]
+  F --> G[Canvas + preview<br/>ui.py PySide6]
+```
+
+## Verified environment
+macOS 15 (Darwin 24.6) on Apple Silicon, Python 3.14.7 (Homebrew), `mediapipe==1.1.1`,
+`opencv-python==5.0.0.93`, `PySide6==6.12.0`. Unit tests, model load and offscreen UI launch were verified;
+**physical camera tracking was not validated** (the build sandbox had no camera permission).
+
+## Setup
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+python scripts/download_model.py     # explicit, one-time, ~8 MB
+python app.py
+pytest                               # unit tests
+```
+
+## Camera and macOS permission
+Grant camera access to the app that launches Python (Terminal / iTerm / VS Code):
+System Settings > Privacy & Security > Camera. Restart that app afterwards. Pick the camera in the dropdown
+(`Refresh` re-probes indices 0-3; the built-in camera is usually 0, the USB one 1) and press **Start Camera**.
+Requested 1280x720 @ 30 FPS; the actual values are read back and shown in Diagnostics.
+
+## Using it
+- **Draw Enabled** off = *Paused* (cursor still follows, nothing is drawn). **Clear Canvas** removes all strokes.
+- Losing the hand ends the stroke; when it returns a new stroke starts, so no long connecting line.
+- **Mirror Camera** (default on): preview behaves like a mirror, so moving your finger to your left moves the
+  cursor left. With it off, the raw camera view is used (left/right swapped if the camera faces you).
+  Toggling mirror resets calibration.
+- **Calibrate**: point your fingertip at each highlighted target (TL, TR, BR, BL) and press **Space** /
+  *Confirm Point*; Esc cancels. Points are checked (duplicates, wrong order, degenerate area) and a homography
+  (`cv2.getPerspectiveTransform`) maps the camera quadrilateral to the canvas. Without calibration the app shows
+  **UNCALIBRATED — linear fallback** (full camera frame stretched to the canvas). *Reset Calibration* returns to it.
+- Smoothing: EMA, `SMOOTHING_ALPHA` in `src/config.py` (1.0 = off).
+
+## Troubleshooting
+| Symptom | Fix |
+|---|---|
+| "No camera found" / "not authorized to capture video" | Grant camera permission (above), restart the terminal/IDE, press Refresh |
+| Wrong camera | Choose another index in the dropdown (macOS Continuity Camera can shift indices) |
+| "Hand Landmarker model not found" | `python scripts/download_model.py` |
+| Cursor mirrored the wrong way | Toggle *Mirror Camera*, then recalibrate |
+| Camera disconnected mid-run | Status shows *Camera unavailable*; reconnect, Refresh, Start |
+
+## Layout
+`src/camera.py` capture thread · `hand_tracker.py` MediaPipe · `worker.py` tracking thread/preview ·
+`calibration.py` mapping · `drawing.py` strokes · `metrics.py` FPS/timing · `ui.py` window · `config.py` constants.
+
+## Known limitations
+Air-drawing has no contact detection; depth/perspective makes the canvas area depend on hand distance.
+One hand only. Inference time shown is the model call only, **not** end-to-end latency (see PERFORMANCE_TEST.md).
+Camera index probing briefly opens each camera. Always-draw only (no pinch-to-draw).
+Next experiment: measure end-to-end latency, then try pinch-to-draw to separate "move" from "draw".

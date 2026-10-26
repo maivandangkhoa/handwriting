@@ -112,13 +112,23 @@ class MainWindow(QWidget):
 
     # ---- camera -------------------------------------------------------------------------
     def _refresh_cameras(self):
+        if self.worker is not None or self.opener is not None:
+            self.message = "Stop the camera before refreshing the camera list."
+            return
+        current = self.camera_box.currentData()
         self.camera_box.clear()
-        found = list_cameras() if self.worker is None else []
+        found = list_cameras()
         for i, w, h in found:
             self.camera_box.addItem(f"Camera {i} ({w}x{h})", i)
-        if not found and self.worker is None:
+        if current is not None:
+            row = self.camera_box.findData(current)
+            self.camera_box.setCurrentIndex(max(row, 0))
+        if found:
+            self.camera_unavailable = False
+            self.message = f"Found {len(found)} camera(s)."
+        else:
             self.camera_unavailable = True
-            self.message = "No camera found. Connect the USB camera and grant camera permission, then Refresh."
+            self.message = "No camera found. Check the USB cable/port, then press Refresh."
 
     def _on_camera_selected(self, _row: int):
         """Switch to the newly selected camera immediately if one is already running."""

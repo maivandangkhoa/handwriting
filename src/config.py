@@ -36,3 +36,11 @@ CALIB_MIN_AREA = 0.02             # of frame area
 # Preview
 PREVIEW_WIDTH = 480
 METRICS_WINDOW_SECONDS = 2.0
+
+# Pinch gesture (thumb tip <-> index tip distance divided by palm length, with hysteresis)
+PINCH_ON_RATIO = 0.30
+PINCH_OFF_RATIO = 0.50
+
+# Chess board in logical canvas coordinates
+CHESS_SQUARE = 88
+CHESS_ORIGIN = ((CANVAS_WIDTH - 8 * CHESS_SQUARE) // 2, (CANVAS_HEIGHT - 8 * CHESS_SQUARE) // 2)

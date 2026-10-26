@@ -47,6 +47,18 @@ Requested 1280x720 @ 30 FPS; the actual values are read back and shown in Diagno
   **UNCALIBRATED — linear fallback** (full camera frame stretched to the canvas). *Reset Calibration* returns to it.
 - Smoothing: EMA, `SMOOTHING_ALPHA` in `src/config.py` (1.0 = off).
 
+## Chess application
+Choose **Chess (pinch to move pieces)** in the *Application* dropdown (default: Air Drawing). Both sides are
+played by you (hot-seat); rules and legality come from [`python-chess`](https://pypi.org/project/chess/).
+- Pointer = midpoint between thumb tip and index tip (green dot while pinching, red otherwise).
+- **Pinch** (bring thumb and index together) over a piece of the side to move to pick it up: the square turns blue
+  and legal destinations get green dots. **Open the fingers** over a square to drop it. Illegal drops, drops
+  outside the board, or dropping on the origin square return the piece.
+- Losing the hand cancels the move; you must open the fingers once before grabbing again.
+- Pawn promotion is automatic (queen). *New Game* resets. Calibrate the same way as for drawing (recommended:
+  the board is in the middle of the canvas, so the uncalibrated fallback already works roughly).
+- Pinch thresholds (`PINCH_ON_RATIO` / `PINCH_OFF_RATIO`) and board size are in `src/config.py`.
+
 ## Troubleshooting
 | Symptom | Fix |
 |---|---|
@@ -58,7 +70,7 @@ Requested 1280x720 @ 30 FPS; the actual values are read back and shown in Diagno
 
 ## Layout
 `src/camera.py` capture thread · `hand_tracker.py` MediaPipe · `worker.py` tracking thread/preview ·
-`calibration.py` mapping · `drawing.py` strokes · `metrics.py` FPS/timing · `ui.py` window · `config.py` constants.
+`calibration.py` mapping · `gesture.py` pinch · `chess_game.py` chess interaction · `canvas.py` rendering · `drawing.py` strokes · `metrics.py` FPS/timing · `ui.py` window · `config.py` constants.
 
 ## Known limitations
 Air-drawing has no contact detection; depth/perspective makes the canvas area depend on hand distance.

@@ -1,67 +1,22 @@
 """PySide6 main window: canvas, preview, controls, diagnostics, calibration flow."""
 import logging
 
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
-from PySide6.QtGui import QColor, QKeySequence, QPainter, QPen, QPixmap, QShortcut
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
 from . import config
+from .canvas import CANVAS_SIZE, CanvasWidget
+from .chess_game import ChessGame
 from .calibration import CORNER_NAMES, CalibrationError, CoordinateMapper
 from .camera import Camera, list_cameras
-from .drawing import DrawingState
+from .drawing import DrawingState, Smoother
+from .gesture import PinchDetector, pinch_point
 from .worker import CameraOpener, TrackingWorker
 
 log = logging.getLogger(__name__)
-
-CANVAS_SIZE = (config.CANVAS_WIDTH, config.CANVAS_HEIGHT)
-TARGETS = [(0.06, 0.08), (0.94, 0.08), (0.94, 0.92), (0.06, 0.92)]  # TL, TR, BR, BL as canvas fractions
-
-
-class CanvasWidget(QWidget):
-    """Draws strokes stored in logical canvas coordinates, letterboxed to keep the aspect ratio."""
-
-    def __init__(self, state: DrawingState):
-        super().__init__()
-        self.state = state
-        self.target_index: int | None = None  # calibration target to highlight
-        self.setMinimumSize(480, 270)
-
-    def _viewport(self) -> tuple[QRectF, float]:
-        s = min(self.width() / CANVAS_SIZE[0], self.height() / CANVAS_SIZE[1])
-        w, h = CANVAS_SIZE[0] * s, CANVAS_SIZE[1] * s
-        return QRectF((self.width() - w) / 2, (self.height() - h) / 2, w, h), s
-
-    def paintEvent(self, _event):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        p.fillRect(self.rect(), QColor(40, 40, 40))
-        rect, s = self._viewport()
-        p.fillRect(rect, QColor(255, 255, 255))
-
-        def to_w(pt):
-            return QPointF(rect.x() + pt[0] * s, rect.y() + pt[1] * s)
-
-        p.setPen(QPen(QColor(20, 20, 120), 4, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-        for stroke in self.state.strokes:
-            if len(stroke) == 1:
-                p.drawPoint(to_w(stroke[0]))
-            for a, b in zip(stroke, stroke[1:]):
-                p.drawLine(to_w(a), to_w(b))
-        if self.target_index is not None:
-            fx, fy = TARGETS[self.target_index]
-            c = to_w((fx * CANVAS_SIZE[0], fy * CANVAS_SIZE[1]))
-            p.setPen(QPen(QColor(220, 0, 0), 3))
-            p.setBrush(Qt.NoBrush)
-            p.drawEllipse(c, 22, 22)
-            p.drawLine(c + QPointF(-30, 0), c + QPointF(30, 0))
-            p.drawLine(c + QPointF(0, -30), c + QPointF(0, 30))
-        if self.state.cursor is not None:
-            p.setPen(Qt.NoPen)
-            p.setBrush(QColor(230, 40, 40, 200))
-            p.drawEllipse(to_w(self.state.cursor), 9, 9)
-
 
 class MainWindow(QWidget):
     def __init__(self):
@@ -71,6 +26,10 @@ class MainWindow(QWidget):
         self.camera = Camera()
         self.worker: TrackingWorker | None = None
         self.state = DrawingState(config.SMOOTHING_ALPHA)
+        self.game = ChessGame()
+        self.chess_mode = False
+        self.pinch = PinchDetector()
+        self.pointer_smoother = Smoother(config.SMOOTHING_ALPHA)
         self.mapper = CoordinateMapper((config.CAMERA_REQUEST_WIDTH, config.CAMERA_REQUEST_HEIGHT), CANVAS_SIZE)
         self.last_tip_raw: tuple[float, float] | None = None
         self.calib_points: list[tuple[float, float]] = []
@@ -99,6 +58,9 @@ class MainWindow(QWidget):
         self.diag = QLabel()
         self.diag.setStyleSheet("font-family: Menlo, monospace;")
 
+        self.app_box = QComboBox()
+        self.app_box.addItems(["Air Drawing", "Chess (pinch to move pieces)"])
+        self.app_box.activated.connect(self._on_app_selected)
         self.camera_box = QComboBox()
         self.camera_box.activated.connect(self._on_camera_selected)  # user-driven only, not programmatic changes
         refresh = QPushButton("Refresh")
@@ -114,6 +76,10 @@ class MainWindow(QWidget):
         clear = QPushButton("Clear Canvas")
         clear.clicked.connect(self.state.clear)
         clear.clicked.connect(self.canvas.update)
+        self.clear_btn = clear
+        self.new_game_btn = QPushButton("New Game")
+        self.new_game_btn.clicked.connect(self._new_game)
+        self.new_game_btn.setVisible(False)
         self.calib_btn = QPushButton("Calibrate")
         self.calib_btn.clicked.connect(self._start_calibration)
         self.confirm_btn = QPushButton("Confirm Point (Space)")
@@ -128,10 +94,12 @@ class MainWindow(QWidget):
         cam_row.addWidget(self.camera_box, 1)
         cam_row.addWidget(refresh)
         side = QVBoxLayout()
+        side.addWidget(QLabel("Application"))
+        side.addWidget(self.app_box)
         for w in (self.status, self.preview):
             side.addWidget(w)
         side.addLayout(cam_row)
-        for w in (self.start_btn, self.draw_chk, self.mirror_chk, clear, self.calib_btn,
+        for w in (self.start_btn, self.draw_chk, self.mirror_chk, clear, self.new_game_btn, self.calib_btn,
                   self.confirm_btn, reset, self.mapping_label, self.hint, self.diag):
             side.addWidget(w)
         side.addStretch(1)
@@ -218,6 +186,9 @@ class MainWindow(QWidget):
             self.worker.stop()
             self.worker = None
         self.state.update(None)
+        self.game.update(None, False)
+        self.pointer_smoother.reset()
+        self.canvas.pinching = False
         self.last_tip_raw = None
         self._cancel_calibration()
         self.start_btn.setText("Start Camera")
@@ -236,10 +207,41 @@ class MainWindow(QWidget):
         self.preview.setPixmap(QPixmap.fromImage(image))
         raw = det.tip_px
         self.last_tip_raw = raw
-        if self.calibrating:
+        if self.chess_mode:
+            self._update_chess(det)
+        elif self.calibrating:
             self.state.update(None)
         else:
             self.state.update(self.mapper.map(raw) if raw is not None else None)
+        self.canvas.update()
+
+    def _update_chess(self, det):
+        """Pointer = midpoint of thumb and index tips; pinching grabs, opening the fingers drops."""
+        pinching = self.pinch.update(det.landmarks_px)
+        pointer = None
+        if det.landmarks_px is not None and not self.calibrating:
+            mapped = self.mapper.map(pinch_point(det.landmarks_px))
+            pointer = self.pointer_smoother.update(mapped) if mapped is not None else None
+        if pointer is None:
+            self.pointer_smoother.reset()
+        self.game.update(pointer, pinching and pointer is not None)
+        self.canvas.pinching = pinching and pointer is not None
+
+    # ---- application selection ----------------------------------------------------------
+    def _on_app_selected(self, row: int):
+        self.chess_mode = row == 1
+        self.canvas.game = self.game if self.chess_mode else None
+        self.state.update(None)
+        self.game.update(None, False)
+        self.pointer_smoother.reset()
+        self.canvas.pinching = False
+        self.draw_chk.setEnabled(not self.chess_mode)
+        self.clear_btn.setVisible(not self.chess_mode)
+        self.new_game_btn.setVisible(self.chess_mode)
+        self.canvas.update()
+
+    def _new_game(self):
+        self.game.new_game()
         self.canvas.update()
 
     def _on_mirror(self, on: bool):
@@ -247,6 +249,7 @@ class MainWindow(QWidget):
         if self.worker is not None:
             self.worker.mirror = on
         self.state.end_stroke()
+        self.game.update(None, False)  # a pointer jump from re-mapping must not move a held piece
         if self.calibrating:
             self._start_calibration()
         else:
@@ -318,10 +321,11 @@ class MainWindow(QWidget):
             status = "Opening camera…"
         elif w is None:
             status = "Camera unavailable" if self.camera_unavailable else "Camera stopped"
-        elif not self.state.draw_enabled:
+        elif not self.chess_mode and not self.state.draw_enabled:
             status = "Paused"
         else:
-            status = "Hand detected" if self.state.cursor is not None else "No hand detected"
+            seen = self.game.pointer is not None if self.chess_mode else self.state.cursor is not None
+            status = "Hand detected" if seen else "No hand detected"
         self.status.setText(status)
         if self.mapper.calibrated:
             self.mapping_label.setText("Mapping: calibrated (homography)")

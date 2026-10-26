@@ -4,9 +4,28 @@ import math
 Point = tuple[float, float]
 
 
+class Smoother:
+    """Exponential moving average of 2D points; `reset()` forgets history (use when tracking is lost)."""
+
+    def __init__(self, alpha: float = 1.0):
+        self.alpha = alpha
+        self.value: Point | None = None
+
+    def reset(self) -> None:
+        self.value = None
+
+    def update(self, point: Point) -> Point:
+        if self.value is None:
+            self.value = point
+        else:
+            a = self.alpha
+            self.value = (a * point[0] + (1 - a) * self.value[0], a * point[1] + (1 - a) * self.value[1])
+        return self.value
+
+
 class DrawingState:
     def __init__(self, smoothing_alpha: float = 1.0):
-        self.smoothing_alpha = smoothing_alpha
+        self._smoother = Smoother(smoothing_alpha)
         self.strokes: list[list[Point]] = []   # finished and in-progress strokes, canvas coordinates
         self.cursor: Point | None = None       # smoothed fingertip position, None when tracking is lost
         self._draw_enabled = True
@@ -32,13 +51,10 @@ class DrawingState:
         """Feed the latest canvas-space fingertip (None = lost/invalid). Returns the smoothed cursor."""
         if point is None or not all(math.isfinite(v) for v in point):
             self.cursor = None
+            self._smoother.reset()
             self.end_stroke()  # never bridge a tracking gap
             return None
-        if self.cursor is None:
-            self.cursor = point
-        else:
-            a = self.smoothing_alpha
-            self.cursor = (a * point[0] + (1 - a) * self.cursor[0], a * point[1] + (1 - a) * self.cursor[1])
+        self.cursor = self._smoother.update(point)
         if self._draw_enabled:
             if not self._stroke_open:
                 self.strokes.append([])

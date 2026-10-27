@@ -48,13 +48,35 @@ def test_clear_removes_everything_and_next_point_starts_fresh():
     assert s.strokes == [[(2, 2)]]
 
 
-def test_smoothing_reduces_step_and_converges():
-    s = DrawingState(smoothing_alpha=0.5)
+class HalfStep:
+    """Deterministic smoother: moves halfway to each new point."""
+
+    def __init__(self):
+        self.value = None
+
+    def reset(self):
+        self.value = None
+
+    def update(self, point):
+        self.value = point if self.value is None else tuple((a + b) / 2 for a, b in zip(point, self.value))
+        return self.value
+
+
+def test_smoother_is_used_and_reset_when_tracking_is_lost():
+    s = DrawingState(HalfStep())
     s.update((0, 0))
     assert s.update((10, 0)) == (5, 0)
-    for _ in range(30):
-        c = s.update((10, 0))
-    assert math.isclose(c[0], 10, abs_tol=1e-6)
+    s.update(None)
+    assert s.update((100, 0)) == (100, 0)   # history forgotten: no drag from the old position
+
+
+def test_pen_up_moves_cursor_without_drawing_and_ends_stroke():
+    s = DrawingState()
+    s.update((0, 0)); s.update((1, 0))
+    assert s.update((50, 50), pen_down=False) == (50, 50)
+    assert s.strokes == [[(0, 0), (1, 0)]]
+    s.update((51, 50)); s.update((52, 50))
+    assert len(s.strokes) == 2 and s.strokes[1] == [(51, 50), (52, 50)]
 
 
 def test_non_finite_point_treated_as_lost():

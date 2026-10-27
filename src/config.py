@@ -29,8 +29,13 @@ MIN_TRACKING_CONFIDENCE = 0.5
 # Mirror the camera by default? Off suits a camera that faces the same way as the user (e.g. aimed at the screen).
 DEFAULT_MIRROR = False
 
-# Smoothing: exponential moving average weight of the newest point (1.0 = off).
-SMOOTHING_ALPHA = 0.5
+# Smoothing: One Euro filter on canvas coordinates (pixels). Lower MIN_CUTOFF = steadier at rest;
+# higher BETA = less lag during fast movement.
+ONE_EURO_MIN_CUTOFF = 1.5
+ONE_EURO_BETA = 0.01
+
+# Camera orientation defaults (see README): vertical flip is for a camera mounted upside down.
+DEFAULT_FLIP_VERTICAL = False
 
 # Calibration validation (fractions of the camera frame)
 CALIB_MIN_POINT_DISTANCE = 0.05   # of frame diagonal

@@ -4,7 +4,7 @@ Isolated from UI/tracking so it can later be reused for camera-to-floor mapping.
 
 Coordinate conventions
 - "raw" points: pixel coordinates in the unmirrored camera frame (what the tracker returns).
-- "view" points: raw points after the optional horizontal mirror (what the user sees in the preview).
+- "view" points: raw points after the optional horizontal mirror / vertical flip (what the user sees in the preview).
 - Calibration points are stored in view coordinates, so changing the mirror setting invalidates them.
 """
 import math
@@ -56,15 +56,21 @@ def validate_points(points: list[Point], frame_size: tuple[int, int]) -> None:
 class CoordinateMapper:
     """Maps raw camera pixels to canvas coordinates (calibrated homography or linear fallback)."""
 
-    def __init__(self, frame_size: tuple[int, int], canvas_size: tuple[int, int], mirror: bool = True):
+    def __init__(self, frame_size: tuple[int, int], canvas_size: tuple[int, int], mirror: bool = True,
+                 flip_vertical: bool = False):
         self.frame_size = frame_size
         self.canvas_size = canvas_size
         self._mirror = mirror
+        self._flip_vertical = flip_vertical
         self._homography: np.ndarray | None = None
 
     @property
     def mirror(self) -> bool:
         return self._mirror
+
+    @property
+    def flip_vertical(self) -> bool:
+        return self._flip_vertical
 
     @property
     def calibrated(self) -> bool:
@@ -75,13 +81,20 @@ class CoordinateMapper:
             self._mirror = mirror
             self.reset()  # stored calibration points are in view coordinates
 
+    def set_flip_vertical(self, flip: bool) -> None:
+        if flip != self._flip_vertical:
+            self._flip_vertical = flip
+            self.reset()
+
     def set_frame_size(self, frame_size: tuple[int, int]) -> None:
         if frame_size != self.frame_size:
             self.frame_size = frame_size
             self.reset()
 
     def to_view(self, raw: Point) -> Point:
-        return (self.frame_size[0] - raw[0], raw[1]) if self._mirror else raw
+        x = self.frame_size[0] - raw[0] if self._mirror else raw[0]
+        y = self.frame_size[1] - raw[1] if self._flip_vertical else raw[1]
+        return (x, y)
 
     def reset(self) -> None:
         self._homography = None

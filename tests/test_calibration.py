@@ -114,3 +114,17 @@ def test_rejects_wrong_point_count():
 
 def test_non_finite_input_returns_none():
     assert mapper().map((math.nan, 10)) is None
+
+
+def test_flip_vertical_moves_cursor_down_when_raw_y_decreases():
+    m = CoordinateMapper(FRAME, CANVAS, mirror=False, flip_vertical=True)
+    a, b = m.map((500, 200)), m.map((500, 100))
+    assert b[1] > a[1]
+    assert m.map((500, 0))[1] == pytest.approx(720)
+
+
+def test_changing_flip_vertical_resets_calibration():
+    m = mapper()
+    m.calibrate(GOOD)
+    m.set_flip_vertical(True)
+    assert not m.calibrated

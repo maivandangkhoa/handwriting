@@ -1,31 +1,18 @@
-"""Stroke state: smoothing, stroke breaking, pause/clear. No Qt, no camera."""
+"""Stroke state: smoothing, stroke breaking, pen up/down, pause/clear. No Qt, no camera."""
 import math
+from typing import Protocol
 
 Point = tuple[float, float]
 
 
-class Smoother:
-    """Exponential moving average of 2D points; `reset()` forgets history (use when tracking is lost)."""
-
-    def __init__(self, alpha: float = 1.0):
-        self.alpha = alpha
-        self.value: Point | None = None
-
-    def reset(self) -> None:
-        self.value = None
-
-    def update(self, point: Point) -> Point:
-        if self.value is None:
-            self.value = point
-        else:
-            a = self.alpha
-            self.value = (a * point[0] + (1 - a) * self.value[0], a * point[1] + (1 - a) * self.value[1])
-        return self.value
+class Smoother(Protocol):
+    def update(self, point: Point) -> Point: ...
+    def reset(self) -> None: ...
 
 
 class DrawingState:
-    def __init__(self, smoothing_alpha: float = 1.0):
-        self._smoother = Smoother(smoothing_alpha)
+    def __init__(self, smoother: Smoother | None = None):
+        self._smoother = smoother  # None = no smoothing
         self.strokes: list[list[Point]] = []   # finished and in-progress strokes, canvas coordinates
         self.cursor: Point | None = None       # smoothed fingertip position, None when tracking is lost
         self._draw_enabled = True
@@ -47,15 +34,21 @@ class DrawingState:
         self.strokes.clear()
         self._stroke_open = False
 
-    def update(self, point: Point | None) -> Point | None:
-        """Feed the latest canvas-space fingertip (None = lost/invalid). Returns the smoothed cursor."""
+    def update(self, point: Point | None, pen_down: bool = True) -> Point | None:
+        """Feed the latest canvas-space pointer (None = lost/invalid). Returns the smoothed cursor.
+
+        `pen_down=False` (e.g. fingers not pinched) moves the cursor without drawing and ends the stroke.
+        """
         if point is None or not all(math.isfinite(v) for v in point):
             self.cursor = None
-            self._smoother.reset()
+            if self._smoother:
+                self._smoother.reset()
             self.end_stroke()  # never bridge a tracking gap
             return None
-        self.cursor = self._smoother.update(point)
-        if self._draw_enabled:
+        self.cursor = self._smoother.update(point) if self._smoother else point
+        if not pen_down:
+            self.end_stroke()
+        elif self._draw_enabled:
             if not self._stroke_open:
                 self.strokes.append([])
                 self._stroke_open = True

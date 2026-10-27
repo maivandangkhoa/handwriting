@@ -36,6 +36,9 @@ System Settings > Privacy & Security > Camera. Restart that app afterwards. Pick
 Requested 1280x720 @ 30 FPS; the actual values are read back and shown in Diagnostics.
 
 ## Using it
+- **Draw mode** (remembered): *Pinch to draw* (default) draws only while thumb and index are pinched, with the
+  pointer at their midpoint (green dot = pen down, red = pen up); *Always draw* follows the index tip and always
+  draws. This is the practical substitute for touch detection, which one ordinary camera cannot do.
 - **Draw Enabled** off = *Paused* (cursor still follows, nothing is drawn). **Clear Canvas** removes all strokes.
 - Losing the hand ends the stroke; when it returns a new stroke starts, so no long connecting line.
 - **Mirror Camera** (default off, remembered between runs): off = raw camera view, correct when the camera looks
@@ -45,7 +48,9 @@ Requested 1280x720 @ 30 FPS; the actual values are read back and shown in Diagno
   *Confirm Point*; Esc cancels. Points are checked (duplicates, wrong order, degenerate area) and a homography
   (`cv2.getPerspectiveTransform`) maps the camera quadrilateral to the canvas. Without calibration the app shows
   **UNCALIBRATED — linear fallback** (full camera frame stretched to the canvas). *Reset Calibration* returns to it.
-- Smoothing: EMA, `SMOOTHING_ALPHA` in `src/config.py` (1.0 = off).
+- **Flip Vertical** (remembered): for a camera mounted upside down. Like Mirror, it resets calibration.
+- Smoothing: One Euro filter (`ONE_EURO_MIN_CUTOFF` lower = steadier at rest, `ONE_EURO_BETA` higher = less lag
+  while moving, both in `src/config.py`).
 
 ## Chess application
 Choose **Chess (pinch to move pieces)** in the *Application* dropdown (default: Air Drawing). Both sides are
@@ -70,10 +75,10 @@ played by you (hot-seat); rules and legality come from [`python-chess`](https://
 
 ## Layout
 `src/camera.py` capture thread · `hand_tracker.py` MediaPipe · `worker.py` tracking thread/preview ·
-`calibration.py` mapping · `gesture.py` pinch · `chess_game.py` chess interaction · `canvas.py` rendering · `drawing.py` strokes · `metrics.py` FPS/timing · `ui.py` window · `config.py` constants.
+`filters.py` One Euro smoothing · `calibration.py` mapping · `gesture.py` pinch · `chess_game.py` chess interaction · `canvas.py` rendering · `drawing.py` strokes · `metrics.py` FPS/timing · `ui.py` window · `config.py` constants.
 
 ## Known limitations
 Air-drawing has no contact detection; depth/perspective makes the canvas area depend on hand distance.
 One hand only. Inference time shown is the model call only, **not** end-to-end latency (see PERFORMANCE_TEST.md).
-Camera index probing briefly opens each camera. Always-draw only (no pinch-to-draw).
-Next experiment: measure end-to-end latency, then try pinch-to-draw to separate "move" from "draw".
+Camera index probing briefly opens each camera. No touch/contact detection: one RGB camera has no reliable depth (use pinch, a side-mounted camera or a depth camera).
+Next experiment: measure end-to-end latency and tune the pinch thresholds and One Euro parameters on real use.

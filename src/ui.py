@@ -12,7 +12,8 @@ from .canvas import CANVAS_SIZE, CanvasWidget
 from .chess_game import ChessGame
 from .calibration import CORNER_NAMES, CalibrationError, CoordinateMapper
 from .camera import Camera, list_cameras
-from .drawing import DrawingState, Smoother
+from .drawing import DrawingState
+from .filters import OneEuroFilter2D
 from .gesture import PinchDetector, pinch_point
 from .worker import CameraOpener, TrackingWorker
 
@@ -25,15 +26,17 @@ class MainWindow(QWidget):
         self.resize(1400, 800)
         self.camera = Camera()
         self.worker: TrackingWorker | None = None
-        self.state = DrawingState(config.SMOOTHING_ALPHA)
+        self.state = DrawingState(OneEuroFilter2D())
         self.game = ChessGame()
         self.chess_mode = False
         self.pinch = PinchDetector()
-        self.pointer_smoother = Smoother(config.SMOOTHING_ALPHA)
+        self.pointer_smoother = OneEuroFilter2D()
         self.settings = QSettings("FingerTrace", "FingerTrace")
         mirror = self.settings.value("mirror", config.DEFAULT_MIRROR, type=bool)
+        flip_v = self.settings.value("flip_vertical", config.DEFAULT_FLIP_VERTICAL, type=bool)
+        self.pinch_to_draw = self.settings.value("pinch_to_draw", True, type=bool)
         self.mapper = CoordinateMapper((config.CAMERA_REQUEST_WIDTH, config.CAMERA_REQUEST_HEIGHT), CANVAS_SIZE,
-                                       mirror=mirror)
+                                       mirror=mirror, flip_vertical=flip_v)
         self.last_tip_raw: tuple[float, float] | None = None
         self.calib_points: list[tuple[float, float]] = []
         self.calibrating = False
@@ -70,12 +73,19 @@ class MainWindow(QWidget):
         refresh.clicked.connect(self._refresh_cameras)
         self.start_btn = QPushButton("Start Camera")
         self.start_btn.clicked.connect(self._toggle_camera)
+        self.draw_mode_box = QComboBox()
+        self.draw_mode_box.addItems(["Pinch to draw", "Always draw"])
+        self.draw_mode_box.setCurrentIndex(0 if self.pinch_to_draw else 1)
+        self.draw_mode_box.activated.connect(self._on_draw_mode)
         self.draw_chk = QCheckBox("Draw Enabled")
         self.draw_chk.setChecked(True)
         self.draw_chk.toggled.connect(self.state.set_draw_enabled)
         self.mirror_chk = QCheckBox("Mirror Camera")
         self.mirror_chk.setChecked(self.mapper.mirror)  # before connecting, so it does not fire the handler
         self.mirror_chk.toggled.connect(self._on_mirror)
+        self.flip_chk = QCheckBox("Flip Vertical (camera upside down)")
+        self.flip_chk.setChecked(self.mapper.flip_vertical)
+        self.flip_chk.toggled.connect(self._on_flip_vertical)
         clear = QPushButton("Clear Canvas")
         clear.clicked.connect(self.state.clear)
         clear.clicked.connect(self.canvas.update)
@@ -102,7 +112,7 @@ class MainWindow(QWidget):
         for w in (self.status, self.preview):
             side.addWidget(w)
         side.addLayout(cam_row)
-        for w in (self.start_btn, self.draw_chk, self.mirror_chk, clear, self.new_game_btn, self.calib_btn,
+        for w in (self.start_btn, self.draw_mode_box, self.draw_chk, self.mirror_chk, self.flip_chk, clear, self.new_game_btn, self.calib_btn,
                   self.confirm_btn, reset, self.mapping_label, self.hint, self.diag):
             side.addWidget(w)
         side.addStretch(1)
@@ -184,6 +194,7 @@ class MainWindow(QWidget):
         self.mapper.set_frame_size((info.width, info.height))
         self.worker = TrackingWorker(self.camera)
         self.worker.mirror = self.mirror_chk.isChecked()
+        self.worker.flip_vertical = self.flip_chk.isChecked()
         self.worker.result.connect(self._on_result)
         self.worker.failed.connect(self._on_failed)
         self.worker.start()
@@ -224,9 +235,26 @@ class MainWindow(QWidget):
             self._update_chess(det)
         elif self.calibrating:
             self.state.update(None)
+            self.canvas.pinching = False
         else:
-            self.state.update(self.mapper.map(raw) if raw is not None else None)
+            self._update_drawing(det)
         self.canvas.update()
+
+    def _update_drawing(self, det):
+        """Pinch mode: pointer = thumb/index midpoint, pen down only while pinched. Always mode: index tip."""
+        pinching = self.pinch.update(det.landmarks_px)
+        if det.landmarks_px is None:
+            self.state.update(None)
+            self.canvas.pinching = False
+            return
+        raw = pinch_point(det.landmarks_px) if self.pinch_to_draw else det.tip_px
+        self.state.update(self.mapper.map(raw), pen_down=pinching or not self.pinch_to_draw)
+        self.canvas.pinching = self.pinch_to_draw and pinching
+
+    def _on_draw_mode(self, row: int):
+        self.pinch_to_draw = row == 0
+        self.settings.setValue("pinch_to_draw", self.pinch_to_draw)
+        self.state.end_stroke()
 
     def _update_chess(self, det):
         """Pointer = midpoint of thumb and index tips; pinching grabs, opening the fingers drops."""
@@ -262,12 +290,22 @@ class MainWindow(QWidget):
         self.mapper.set_mirror(on)  # also invalidates calibration (stored in view coordinates)
         if self.worker is not None:
             self.worker.mirror = on
+        self._orientation_changed("Mirror")
+
+    def _on_flip_vertical(self, on: bool):
+        self.settings.setValue("flip_vertical", on)
+        self.mapper.set_flip_vertical(on)
+        if self.worker is not None:
+            self.worker.flip_vertical = on
+        self._orientation_changed("Vertical flip")
+
+    def _orientation_changed(self, what: str):
         self.state.end_stroke()
         self.game.update(None, False)  # a pointer jump from re-mapping must not move a held piece
         if self.calibrating:
             self._start_calibration()
         else:
-            self.message = "Mirror changed: calibration reset (linear fallback in use)."
+            self.message = f"{what} changed: calibration reset (linear fallback in use)."
 
     # ---- calibration --------------------------------------------------------------------
     def _start_calibration(self):

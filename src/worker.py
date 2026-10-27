@@ -14,8 +14,8 @@ from .metrics import RateCounter, TimingStat
 log = logging.getLogger(__name__)
 
 
-def render_preview(frame: np.ndarray, det: Detection, mirror: bool) -> QImage:
-    """Downscaled BGR frame with landmarks and a highlighted index fingertip, optionally mirrored."""
+def render_preview(frame: np.ndarray, det: Detection, mirror: bool, flip_vertical: bool = False) -> QImage:
+    """Downscaled BGR frame with landmarks and a highlighted index fingertip, optionally mirrored/flipped."""
     h, w = frame.shape[:2]
     scale = config.PREVIEW_WIDTH / w
     img = cv2.resize(frame, (config.PREVIEW_WIDTH, int(h * scale)))
@@ -26,8 +26,8 @@ def render_preview(frame: np.ndarray, det: Detection, mirror: bool) -> QImage:
         for p in pts:
             cv2.circle(img, tuple(p), 3, (0, 200, 255), -1)
         cv2.circle(img, tuple(pts[INDEX_FINGER_TIP]), 9, (0, 0, 255), 2)
-    if mirror:
-        img = cv2.flip(img, 1)
+    if mirror or flip_vertical:
+        img = cv2.flip(img, -1 if mirror and flip_vertical else 1 if mirror else 0)
     rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     return QImage(rgb.data, rgb.shape[1], rgb.shape[0], rgb.strides[0], QImage.Format_RGB888).copy()
 
@@ -40,6 +40,7 @@ class TrackingWorker(QThread):
         super().__init__()
         self._camera = camera
         self.mirror = True
+        self.flip_vertical = False
         self.fps = RateCounter(config.METRICS_WINDOW_SECONDS)
         self.inference_ms = TimingStat()
         self.processed = 0
@@ -68,7 +69,7 @@ class TrackingWorker(QThread):
                 self.fps.tick()
                 self.inference_ms.add(det.inference_ms)
                 self.last_hand_count = det.hand_count
-                self.result.emit(render_preview(frame, det, self.mirror), det)
+                self.result.emit(render_preview(frame, det, self.mirror, self.flip_vertical), det)
         except Exception as exc:
             log.exception("Tracking loop crashed")
             self.failed.emit(f"Tracking stopped: {exc}")

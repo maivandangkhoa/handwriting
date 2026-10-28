@@ -3,13 +3,13 @@ import time
 
 from PySide6.QtCore import QPointF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPixmap, QPolygonF
-from PySide6.QtWidgets import QLabel
+from PySide6.QtWidgets import QLabel, QSlider, QVBoxLayout, QWidget
 
 from . import config
 from .calibration import CORNER_NAMES, CalibrationError, CoordinateMapper
 from .hand_slots import HandSlots
 from .hand_tracker import Detection
-from .keyboard_layout import KEYS, LAYOUT_H, LAYOUT_W
+from .keyboard_layout import KEYS, LAYOUT_H, LAYOUT_W, base_char
 from .typing_session import FINGERTIPS, TypingSession
 
 # Corner order matches CoordinateMapper.calibrate: layout TL, TR, BR, BL. Named by key (not by screen direction)
@@ -18,6 +18,44 @@ CALIB_STEPS = (("the outer top-left corner of the ESC key", (0.0, 0.0)),
                ("the outer top-right corner of the power / Touch ID key", (LAYOUT_W, 0.0)),
                ("the outer bottom-right corner of the arrow-key cluster", (LAYOUT_W, LAYOUT_H)),
                ("the outer bottom-left corner of the FN key", (0.0, LAYOUT_H)))
+
+
+def real_char(event) -> str | None:
+    """Layout character of a real key event ('\\b' backspace, '\\n' enter, '\\t' tab), or None if not typeable."""
+    key = event.key()
+    if key == Qt.Key_Backspace:
+        return "\b"
+    if key in (Qt.Key_Return, Qt.Key_Enter):
+        return "\n"
+    if key == Qt.Key_Tab:
+        return "\t"
+    text = event.text()
+    return base_char(text) if len(text) == 1 and text.isprintable() else None
+
+
+class SensitivityControl(QWidget):
+    """Slider 1..10 for how small a finger movement still counts as a key press."""
+    changed = Signal(int)
+
+    def __init__(self, level: int):
+        super().__init__()
+        self.label = QLabel()
+        self.slider = QSlider(Qt.Horizontal)
+        self.slider.setRange(1, 10)
+        self.slider.setValue(level)
+        self.slider.valueChanged.connect(self._on_change)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.label)
+        layout.addWidget(self.slider)
+        self._update_label(level)
+
+    def _update_label(self, level: int) -> None:
+        self.label.setText(f"Typing sensitivity: {level}/10 (higher = smaller movements count, more false keys)")
+
+    def _on_change(self, level: int) -> None:
+        self._update_label(level)
+        self.changed.emit(level)
 
 
 class PreviewLabel(QLabel):

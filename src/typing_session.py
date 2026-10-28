@@ -4,7 +4,7 @@ from collections.abc import Callable
 from . import config
 from .filters import OneEuroFilter2D
 from .keyboard_layout import Key, key_at
-from .press_detector import PressDetector
+from .press_detector import PressDetector, scale_for_sensitivity
 from .typing_eval import TypingEvaluator
 
 Point = tuple[float, float]
@@ -24,6 +24,11 @@ class TypingSession:
         self._clock: Callable[[], float] = lambda: self._now
         self._filters: dict[str, OneEuroFilter2D] = {}
         self._detector = PressDetector()
+        self.set_sensitivity(config.TYPING_SENSITIVITY)
+
+    def set_sensitivity(self, level: float) -> None:
+        """1..10; higher = smaller finger movements count as a press (and more false presses)."""
+        self._detector.scale = scale_for_sensitivity(level)
 
     def clear(self) -> None:
         self.text = self.actual_text = ""

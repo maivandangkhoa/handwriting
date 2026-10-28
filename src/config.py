@@ -58,7 +58,8 @@ TYPING_NUM_HANDS = 2
 TYPING_MIN_CONFIDENCE = 0.35       # looser detect/presence/tracking thresholds so the second hand is picked up from above
 TYPING_FILTER_MIN_CUTOFF = 3.0     # One Euro filter per fingertip, in key units
 TYPING_FILTER_BETA = 1.0
-TYPING_V_MOVE = 3.0                # faster than this arms a fingertip ("it travelled to a key")
-TYPING_V_STOP = 1.2                # slower than this counts as stopped
-TYPING_DWELL_S = 0.12              # stopped this long after travelling = a key press
+TYPING_ARM_DIST = 0.35             # a fingertip leaving its resting spot by this much (key units) is "on its way to a key"
+TYPING_STILL_RADIUS = 0.22         # ...and staying within this radius ...
+TYPING_DWELL_S = 0.12              # ...for this long = a key press
+TYPING_SENSITIVITY = 7             # 1..10 slider; 5 = the distances above, higher = smaller movements count
 TYPING_EVAL_WINDOW_S = 0.6         # a predicted key within this of a real keystroke counts as its match

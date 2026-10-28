@@ -34,7 +34,7 @@ def test_holding_still_does_not_repeat_but_moving_again_re_arms():
 
 
 def test_slow_drift_does_not_fire():
-    drift = [(0.3 * i * DT * 3, 1.0) for i in range(120)]    # ~0.9 u/s, below v_move
+    drift = [(0.3 * i * DT * 3, 1.0) for i in range(120)]    # ~0.9 u/s: the anchor keeps up with it
     assert run(PressDetector(), "a", drift) == []
 
 
@@ -56,3 +56,38 @@ def test_retain_only_drops_missing_fingers():
     det.update("b", (0, 0), 0.0)
     det.retain_only({"b"})
     assert "a" not in det._fingers and "b" in det._fingers
+
+
+def small_tap(x=5.0, out=0.4, steps=6):
+    """Rest, move `out` units away, come back, rest."""
+    path = [(x, 1.0)] * 10
+    path += [(x + out * (i + 1) / steps, 1.0) for i in range(steps)]
+    path += [(x + out * (1 - (i + 1) / steps), 1.0) for i in range(steps)]
+    return path + [(x, 1.0)] * 12
+
+
+def test_small_out_and_back_tap_fires():
+    assert len(run(PressDetector(dwell=0.12), "a", small_tap())) == 1
+
+
+def test_small_tap_is_ignored_when_it_does_not_leave_the_resting_spot():
+    assert run(PressDetector(dwell=0.12, arm_dist=99.0), "a", small_tap()) == []   # arm distance out of reach
+
+
+def test_repeated_same_key_taps_each_fire():
+    path = small_tap() + small_tap()
+    assert len(run(PressDetector(dwell=0.12), "a", path)) == 2
+
+
+def test_scale_makes_smaller_movements_count():
+    tiny = small_tap(out=0.2)                       # 0.2 u < arm_dist 0.35
+    strict, sensitive = PressDetector(dwell=0.12), PressDetector(dwell=0.12)
+    sensitive.scale = 0.5
+    assert run(strict, "a", tiny) == [] and len(run(sensitive, "a", tiny)) == 1
+
+
+def test_scale_for_sensitivity_mapping():
+    from src.press_detector import scale_for_sensitivity
+    assert scale_for_sensitivity(5) == 1.0
+    assert scale_for_sensitivity(10) < scale_for_sensitivity(7) < 1.0 < scale_for_sensitivity(3) < scale_for_sensitivity(1)
+    assert 0.25 < scale_for_sensitivity(10) < 0.35

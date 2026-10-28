@@ -81,13 +81,27 @@ the detection thresholds are loosened to `TYPING_MIN_CONFIDENCE` in this mode so
    ground truth and are compared with the camera's guesses (accuracy / wrong / missed / false in Diagnostics).
    The real keystrokes never reach the UI controls while this mode is active.
 
-**How a press is inferred** (`src/press_detector.py`): from 2D fingertip motion only. A fingertip must *travel* over
-the keyboard (> `TYPING_V_MOVE`) and then *stop* (< `TYPING_V_STOP`) for `TYPING_DWELL_S`; that fires one press on
-the key under it, and it must move again before it can fire again. Resting fingers never type. Thumbs only type
-space. All thresholds are in `src/config.py` (key units per second; 1 unit ~ 19 mm).
+**How a press is inferred** (`src/press_detector.py`): from 2D fingertip motion only, purely spatial. A fingertip is
+*armed* when it leaves its resting spot by more than `TYPING_ARM_DIST` (travelling to a key, or a small tap), then it
+*fires* when it stays within `TYPING_STILL_RADIUS` for `TYPING_DWELL_S`: one press on the key under it. It cannot
+fire again until it is armed again, so fingers resting on the keys never type, and an out-and-back tap of the same
+key counts again. Thumbs only type space. Distances are in key units (1 unit ~ 19 mm).
 
-Known limits of this approach (one RGB camera has no reliable depth): repeating the *same* key without in-plane finger
-movement is usually missed; fingers pausing over keys while repositioning can type by mistake; the fingertip is above
+**Sensitivity slider** (typing mode, remembered): 1..10 scales both distances (5 = the config values, 7 default,
+10 = about 0.3x). Higher catches smaller finger movements but also types by mistake when the hand-landmark jitter is
+large. Simulated resting hands, false presses per minute (jitter sigma in key units; 0.05 ~ 3 px on a typical view):
+
+| jitter | s=5 | s=7 | s=8 | s=9 | s=10 |
+|---|---|---|---|---|---|
+| 0.03 | 0 | 0 | 0 | 0 | 0.2 |
+| 0.05 | 0 | 0 | 0.2 | 1.0 | 8.2 |
+| 0.08 | 0 | 1.0 | 8.8 | 79 | 141 |
+
+These numbers come from synthetic noise, not real hands: raise the slider until the Diagnostics "missed" count drops,
+and back off if "false" starts to rise.
+
+Known limits of this approach (one RGB camera has no reliable depth): repeating the *same* key without any in-plane finger
+movement (less than `TYPING_ARM_DIST`) is missed; fingers pausing over keys while repositioning can type by mistake; the fingertip is above
 the key surface so an oblique camera sees it displaced from the key it presses; Shift/modifiers and uppercase are
 not interpreted; accuracy has not been measured on real hands yet. Use the Diagnostics accuracy line to tune the
 thresholds, and treat anything below ~90% as "not yet usable for typing".

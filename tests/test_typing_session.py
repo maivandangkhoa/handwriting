@@ -81,3 +81,32 @@ def test_real_keys_feed_ground_truth():
     s.real_key("a", 1.0); s.real_key("b", 1.1); s.real_key("\b", 1.2)
     assert s.actual_text == "a"
     assert s.evaluator.stats(10.0).truth == 3
+
+
+def test_resting_hand_with_landmark_jitter_types_nothing_at_default_sensitivity():
+    import random
+    rng = random.Random(7)
+    s = TypingSession()
+    base = {"hand0-index": centre("f"), "hand1-index": centre("j")}
+    for i in range(30 * 20):  # 20 s at 30 fps, +-0.04 key units of jitter
+        s.update({k: (x + rng.gauss(0, 0.04), y + rng.gauss(0, 0.04)) for k, (x, y) in base.items()}, i * DT)
+    assert s.text == ""
+
+
+def test_higher_sensitivity_catches_a_tap_the_base_setting_misses():
+    def type_tiny_tap(level):
+        s = TypingSession()
+        s.set_sensitivity(level)
+        t = Typist(s, start=centre("f"))
+        t.pos = centre("f")
+        for _ in range(10):
+            t.step(t.pos)
+        x, y = t.pos
+        for i in range(6):                                  # drift 0.22 key units away over 0.2 s
+            t.step((x + 0.22 * (i + 1) / 6, y))
+        for i in range(6):
+            t.step((x + 0.22 * (1 - (i + 1) / 6), y))
+        for _ in range(12):
+            t.step((x, y))
+        return s.text
+    assert type_tiny_tap(5) == "" and type_tiny_tap(8) == "f"

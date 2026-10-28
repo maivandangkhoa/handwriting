@@ -16,8 +16,7 @@ from .camera import Camera, list_cameras
 from .drawing import DrawingState
 from .filters import OneEuroFilter2D
 from .gesture import PinchDetector, pinch_point
-from .keyboard_layout import base_char
-from .typing_mode import PreviewLabel, TypingMode
+from .typing_mode import PreviewLabel, SensitivityControl, TypingMode, real_char
 from .worker import CameraOpener, TrackingWorker
 
 log = logging.getLogger(__name__)
@@ -41,6 +40,11 @@ class MainWindow(QWidget):
         self.mapper = CoordinateMapper((config.CAMERA_REQUEST_WIDTH, config.CAMERA_REQUEST_HEIGHT), CANVAS_SIZE,
                                        mirror=mirror, flip_vertical=flip_v)
         self.typing = TypingMode(self.mapper.frame_size, mirror, flip_v)
+        sensitivity = self.settings.value("typing_sensitivity", config.TYPING_SENSITIVITY, type=int)
+        self.typing.session.set_sensitivity(sensitivity)
+        self.sensitivity_ctl = SensitivityControl(sensitivity)
+        self.sensitivity_ctl.changed.connect(self._on_sensitivity)
+        self.sensitivity_ctl.setVisible(False)
         self.last_tip_raw: tuple[float, float] | None = None
         self.calib_points: list[tuple[float, float]] = []
         self.calibrating = False
@@ -124,7 +128,7 @@ class MainWindow(QWidget):
             side.addWidget(w)
         side.addLayout(cam_row)
         for w in (self.start_btn, self.draw_mode_box, self.draw_chk, self.mirror_chk, self.flip_chk, clear, self.new_game_btn, self.calib_btn,
-                  self.confirm_btn, reset, self.mapping_label, self.hint, self.diag):
+                  self.confirm_btn, reset, self.sensitivity_ctl, self.mapping_label, self.hint, self.diag):
             side.addWidget(w)
         side.addStretch(1)
         panel = QWidget()
@@ -310,10 +314,15 @@ class MainWindow(QWidget):
         self.clear_btn.setText("Clear Canvas" if row == 0 else "Clear Text")
         self.new_game_btn.setVisible(row == 1)
         self.confirm_btn.setVisible(row != 2)
+        self.sensitivity_ctl.setVisible(row == 2)
         self.calib_btn.setText("Calibrate Keyboard (click 4 corners)" if row == 2 else "Calibrate")
         self.message = ("Make the preview upright (Mirror / Flip Vertical), then Calibrate Keyboard."
                         if row == 2 else "")
         self.canvas.update()
+
+    def _on_sensitivity(self, level: int):
+        self.settings.setValue("typing_sensitivity", level)
+        self.typing.session.set_sensitivity(level)
 
     def _on_clear(self):
         if self.mode == 2:
@@ -333,22 +342,10 @@ class MainWindow(QWidget):
         if self.mode == 2 and event.type() == QEvent.KeyPress and self.isActiveWindow():
             if event.modifiers() & (Qt.ControlModifier | Qt.MetaModifier):
                 return False  # leave Cmd+Q etc. alone
-            if not event.isAutoRepeat() and (ch := self._real_char(event)) is not None:
+            if not event.isAutoRepeat() and (ch := real_char(event)) is not None:
                 self.typing.session.real_key(ch, time.monotonic())
             return True
         return super().eventFilter(obj, event)
-
-    @staticmethod
-    def _real_char(event) -> str | None:
-        key = event.key()
-        if key == Qt.Key_Backspace:
-            return "\b"
-        if key in (Qt.Key_Return, Qt.Key_Enter):
-            return "\n"
-        if key == Qt.Key_Tab:
-            return "\t"
-        text = event.text()
-        return base_char(text) if len(text) == 1 and text.isprintable() else None
 
     def _new_game(self):
         self.game.new_game()

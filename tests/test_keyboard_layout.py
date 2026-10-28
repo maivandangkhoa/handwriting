@@ -11,8 +11,8 @@ def test_key_lookup_by_position():
     assert key_at(2.0, 2.5).char == "q"          # tab is 1.5 wide, so q starts at x = 1.5
     assert key_at(1.6, 2.5).char == "⇪" or key_at(1.6, 3.5).char is None   # caps lock types nothing
     assert key_at(8.0, 5.5).char == " "
-    assert key_at(14.5, 1.5).char == "\b"
-    assert key_at(-0.1, 0.5) is None and key_at(15.0, 0.5) is None and key_at(5, 6.0) is None
+    assert key_at(14.0, 1.5).char == "\b"
+    assert key_at(-0.1, 0.5) is None and key_at(14.5, 0.5) is None and key_at(5, 6.0) is None
 
 
 def test_home_row_letters_in_order():
@@ -25,3 +25,10 @@ def test_base_char_maps_shifted_and_rejects_unknown():
     assert base_char("A") == "a" and base_char("!") == "1" and base_char("?") == "/"
     assert base_char("\r") == "\n" and base_char("\b") == "\b" and base_char(" ") == " "
     assert base_char("é") is None
+
+
+def test_arrow_cluster_is_three_keys_with_half_height_up_down():
+    names = {k.name: k for k in KEYS if k.name in "◀▲▼▶"}
+    assert set(names) == set("◀▲▼▶")
+    assert names["▲"].h == names["▼"].h == 0.5 and names["◀"].h == names["▶"].h == 1.0
+    assert key_at(12.5, 5.25).name == "▲" and key_at(12.5, 5.75).name == "▼"

@@ -72,10 +72,10 @@ which key a fingertip pressed and types it into the "Read by camera" box. Two ha
 2. **Calibrate Keyboard**, then *click* four corners of the whole key area on the camera preview, in this order:
    outer top-left of the **esc** key, outer top-right of the **power / Touch ID** key, outer bottom-right of the
    **arrow-key cluster**, outer bottom-left of the **fn** key. The matching key is highlighted on the canvas
-   while you calibrate. The layout has six full-height rows (function row included); the cyan grid drawn on the
-   preview shows where the app thinks each key is. If rows or columns are off, recalibrate (click the true outer
-   corners of the key block, not the bezel). Key widths are a standard approximation, so columns can drift by up
-   to about half a key in the middle of a row.
+   while you calibrate. The layout (`src/keyboard_layout.py`) has six full-height rows, 14.5 key pitches wide, measured
+   from a MacBook Air (US-style, arrow cluster with half-height up/down); the cyan grid drawn on the preview shows
+   where the app thinks each key is. If it is off, recalibrate: click the true outer corners of the key block, not
+   the bezel. Other keyboards (ISO Enter, different bottom row) need their own layout.
 3. Type on the real keyboard as normal. The window must be focused; your real keystrokes are only used locally as
    ground truth and are compared with the camera's guesses (accuracy / wrong / missed / false in Diagnostics).
    The real keystrokes never reach the UI controls while this mode is active.

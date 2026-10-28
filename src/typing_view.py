@@ -6,7 +6,7 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPen
 
 from .keyboard_layout import KEYS, LAYOUT_H, LAYOUT_W, key_at
 
-KB_X, KB_Y, KB_UNIT, KB_ROW_H = 40, 252, 80, 72
+KB_X, KB_Y, KB_UNIT, KB_ROW_H = 60, 252, 80, 72
 FLASH_S = 0.35
 
 

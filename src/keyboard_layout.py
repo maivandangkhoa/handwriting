@@ -1,11 +1,11 @@
 """Key geometry of a US/ANSI-style laptop keyboard, in key units (1 unit = one standard key width).
 
-Covers the five main rows (number row to space bar), 15 x 5 units. The function-key row is excluded.
+Six full-height rows (function row, number row ... space bar), 15 x 6 units, like a current MacBook.
 `char` is the text a key produces: "\\b" backspace, "\\n" enter, "\\t" tab, None for keys that type nothing here.
 """
 from dataclasses import dataclass
 
-LAYOUT_W, LAYOUT_H = 15.0, 5.0
+LAYOUT_W, LAYOUT_H = 15.0, 6.0
 
 
 @dataclass(frozen=True)
@@ -35,6 +35,7 @@ def _chars(text: str) -> list[tuple[str, str, float]]:
 
 
 _ROWS = [
+    [("esc", None, 1.5)] + [(f"F{i}", None, 1.0) for i in range(1, 13)] + [("\u23fb", None, 1.5)],
     _chars("`1234567890-=") + [("⌫", "\b", 2.0)],
     [("⇥", "\t", 1.5)] + _chars("qwertyuiop[]") + [("\\", "\\", 1.5)],
     [("⇪", None, 1.75)] + _chars("asdfghjkl;'") + [("⏎", "\n", 2.25)],

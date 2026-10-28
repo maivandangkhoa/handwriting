@@ -67,12 +67,15 @@ played by you (hot-seat); rules and legality come from [`python-chess`](https://
 ## Keyboard typing application (experimental)
 Choose **Keyboard typing (camera reads keys)**. The camera looks at your keyboard from above; the app tries to infer
 which key a fingertip pressed and types it into the "Read by camera" box. Two hands, five fingertips each.
-1. Make the preview upright: a camera that sees the keyboard upside down needs **Mirror + Flip Vertical** both on
-   (a 180 degree rotation); letters should read normally. Changing these resets calibration.
-2. **Calibrate Keyboard**, then *click* the four corners of the key block on the camera preview, in order: top-left of
-   the \` key, top-right of the delete key, bottom-right of the arrow-key cluster, bottom-left of the fn key
-   (the function-key row is not included). The cyan grid drawn on the preview shows where the app thinks each key is;
-   if it does not line up with your keys, recalibrate.
+1. Optional: if the camera sees the keyboard upside down (a 180 degree rotation) turn **Mirror + Flip Vertical** both
+   on so letters read normally. Calibration works either way because the steps name *keys*, not directions.
+2. **Calibrate Keyboard**, then *click* four corners of the whole key area on the camera preview, in this order:
+   outer top-left of the **esc** key, outer top-right of the **power / Touch ID** key, outer bottom-right of the
+   **arrow-key cluster**, outer bottom-left of the **fn** key. The matching key is highlighted on the canvas
+   while you calibrate. The layout has six full-height rows (function row included); the cyan grid drawn on the
+   preview shows where the app thinks each key is. If rows or columns are off, recalibrate (click the true outer
+   corners of the key block, not the bezel). Key widths are a standard approximation, so columns can drift by up
+   to about half a key in the middle of a row.
 3. Type on the real keyboard as normal. The window must be focused; your real keystrokes are only used locally as
    ground truth and are compared with the camera's guesses (accuracy / wrong / missed / false in Diagnostics).
    The real keystrokes never reach the UI controls while this mode is active.

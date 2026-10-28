@@ -12,7 +12,7 @@ def centre(char):
 class Typist:
     """Drives one fingertip through travel-then-stop presses at 30 fps."""
 
-    def __init__(self, session, fid="Right-index", start=(7.0, 4.8)):
+    def __init__(self, session, fid="Right-index", start=(7.0, 5.8)):
         self.s, self.fid, self.pos, self.t = session, fid, start, 0.0
         self.s.update({fid: start}, self.t)
 
@@ -61,7 +61,7 @@ def test_thumb_only_types_space_and_modifiers_type_nothing():
     t.press(" ")
     assert s.text == " "
     t2 = Typist(s, fid="Right-index")
-    t2.pos = (0.5, 3.5)                   # shift
+    t2.pos = (0.5, 4.5)                   # shift
     t2.press("\t")
     assert s.text == " \t"
 

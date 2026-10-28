@@ -11,9 +11,12 @@ from .hand_tracker import Detection
 from .keyboard_layout import KEYS, LAYOUT_H, LAYOUT_W
 from .typing_session import FINGERTIPS, TypingSession
 
-CALIB_HINTS = ("top-left corner of the ` key", "top-right corner of the delete key",
-               "bottom-right corner of the bottom row (right end of the arrow keys)",
-               "bottom-left corner of the fn key")
+# Corner order matches CoordinateMapper.calibrate: layout TL, TR, BR, BL. Named by key (not by screen direction)
+# so it stays unambiguous when the camera sees the keyboard rotated or mirrored.
+CALIB_STEPS = (("the outer top-left corner of the ESC key", (0.0, 0.0)),
+               ("the outer top-right corner of the power / Touch ID key", (LAYOUT_W, 0.0)),
+               ("the outer bottom-right corner of the arrow-key cluster", (LAYOUT_W, LAYOUT_H)),
+               ("the outer bottom-left corner of the FN key", (0.0, LAYOUT_H)))
 
 
 class PreviewLabel(QLabel):
@@ -47,7 +50,12 @@ class TypingMode:
 
     def _prompt(self) -> None:
         i = len(self.pending)
-        self.message = f"Keyboard {i + 1}/4: click the {CALIB_HINTS[i]} on the camera preview."
+        self.message = (f"Keyboard {i + 1}/4: click {CALIB_STEPS[i][0]} on the camera preview "
+                        "(the highlighted key on the canvas shows which one).")
+
+    def calib_corner(self) -> tuple[float, float] | None:
+        """Layout corner the user is being asked to click, while calibrating."""
+        return CALIB_STEPS[len(self.pending)][1] if self.calibrating and len(self.pending) < 4 else None
 
     def click(self, x: float, y: float, label: QLabel) -> None:
         """Handle a click at label coordinates (x, y) while calibrating."""

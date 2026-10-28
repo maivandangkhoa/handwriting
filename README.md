@@ -70,13 +70,22 @@ which key a fingertip pressed and types it into the "Read by camera" box. Two ha
 the detection thresholds are loosened to `TYPING_MIN_CONFIDENCE` in this mode so the second hand is picked up).
 1. Optional: if the camera sees the keyboard upside down (a 180 degree rotation) turn **Mirror + Flip Vertical** both
    on so letters read normally. Calibration works either way because the steps name *keys*, not directions.
-2. **Calibrate Keyboard**, then *click* four corners of the whole key area on the camera preview, in this order:
+2. **Calibration is automatic** (checkbox *Auto-detect keyboard*, on by default): once the camera runs in this mode,
+   `src/keyboard_detect.py` looks for the keyboard every 2 s until it finds it, on a background thread. It matches
+   the outline of every key in the layout against the image edges (chamfer matching, any of 4 rotations with or
+   without reflection), accepts only a convincing match and shows the cyan key grid on the preview so you can check
+   it. Press *Auto-calibrate Keyboard now* to redo it after moving the camera or the laptop. It needs the whole
+   keyboard in view, reasonably sharp and not too dark; it works with the picture upright, rotated 180 degrees,
+   mirrored or slightly rotated. Changing Mirror / Flip Vertical resets the calibration and detects again.
+   **Manual fallback:** *Calibrate Keyboard*, then *click* four corners of the whole key area on the camera preview,
+   in this order:
    outer top-left of the **esc** key, outer top-right of the **power / Touch ID** key, outer bottom-right of the
    **arrow-key cluster**, outer bottom-left of the **fn** key. The matching key is highlighted on the canvas
    while you calibrate. The layout (`src/keyboard_layout.py`) has six full-height rows, 14.5 key pitches wide, measured
    from a MacBook Air (US-style, arrow cluster with half-height up/down); the cyan grid drawn on the preview shows
-   where the app thinks each key is. If it is off, recalibrate: click the true outer corners of the key block, not
-   the bezel. Other keyboards (ISO Enter, different bottom row) need their own layout.
+   where the app thinks each key is. If it is off, recalibrate by clicking the true outer corners of the key block,
+   not the bezel. Other keyboards (ISO Enter, different bottom row) need their own layout, and automatic detection
+   assumes this layout.
 3. Type on the real keyboard as normal. The window must be focused; your real keystrokes are only used locally as
    ground truth and are compared with the camera's guesses (accuracy / wrong / missed / false in Diagnostics).
    The real keystrokes never reach the UI controls while this mode is active.
@@ -117,7 +126,7 @@ thresholds, and treat anything below ~90% as "not yet usable for typing".
 
 ## Layout
 `src/camera.py` capture thread · `hand_tracker.py` MediaPipe · `worker.py` tracking thread/preview ·
-`filters.py` One Euro smoothing · `calibration.py` mapping · `gesture.py` pinch · `keyboard_layout.py` / `press_detector.py` / `typing_session.py` / `typing_eval.py` / `typing_mode.py` / `typing_view.py` keyboard app · `chess_game.py` chess interaction · `canvas.py` rendering · `drawing.py` strokes · `metrics.py` FPS/timing · `ui.py` window · `config.py` constants.
+`filters.py` One Euro smoothing · `calibration.py` mapping · `gesture.py` pinch · `keyboard_layout.py` / `keyboard_detect.py` / `press_detector.py` / `typing_session.py` / `typing_eval.py` / `typing_mode.py` / `typing_view.py` keyboard app · `chess_game.py` chess interaction · `canvas.py` rendering · `drawing.py` strokes · `metrics.py` FPS/timing · `ui.py` window · `config.py` constants.
 
 ## Known limitations
 Air-drawing has no contact detection; depth/perspective makes the canvas area depend on hand distance.

@@ -63,3 +63,8 @@ TYPING_STILL_RADIUS = 0.22         # ...and staying within this radius ...
 TYPING_DWELL_S = 0.12              # ...for this long = a key press
 TYPING_SENSITIVITY = 7             # 1..10 slider; 5 = the distances above, higher = smaller movements count
 TYPING_EVAL_WINDOW_S = 0.6         # a predicted key within this of a real keystroke counts as its match
+
+# Automatic keyboard detection (chamfer matching of the key outlines against the layout)
+KEYBOARD_DETECT_WIDTH = 640        # frames are downscaled to this width for detection
+KEYBOARD_DETECT_MAX_COST = 1.2     # mean distance (px at that width) from layout key edges to image edges; above = reject
+KEYBOARD_DETECT_RETRY_S = 2.0      # while typing mode is uncalibrated, retry this often

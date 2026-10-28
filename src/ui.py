@@ -16,7 +16,7 @@ from .camera import Camera, list_cameras
 from .drawing import DrawingState
 from .filters import OneEuroFilter2D
 from .gesture import PinchDetector, pinch_point
-from .typing_mode import PreviewLabel, SensitivityControl, TypingMode, real_char
+from .typing_mode import PreviewLabel, TypingControls, TypingMode, real_char
 from .worker import CameraOpener, TrackingWorker
 
 log = logging.getLogger(__name__)
@@ -42,15 +42,19 @@ class MainWindow(QWidget):
         self.typing = TypingMode(self.mapper.frame_size, mirror, flip_v)
         sensitivity = self.settings.value("typing_sensitivity", config.TYPING_SENSITIVITY, type=int)
         self.typing.session.set_sensitivity(sensitivity)
-        self.sensitivity_ctl = SensitivityControl(sensitivity)
-        self.sensitivity_ctl.changed.connect(self._on_sensitivity)
-        self.sensitivity_ctl.setVisible(False)
+        self.typing.auto_detect = self.settings.value("auto_detect_keyboard", True, type=bool)
+        self.typing_ctl = TypingControls(sensitivity, self.typing.auto_detect)
+        self.typing_ctl.sensitivity_changed.connect(self._on_sensitivity)
+        self.typing_ctl.auto_toggled.connect(self._on_auto_detect)
+        self.typing_ctl.auto_clicked.connect(lambda: self.typing.maybe_auto_calibrate(self.camera.latest, time.monotonic(), force=True))
+        self.typing_ctl.setVisible(False)
         self.last_tip_raw: tuple[float, float] | None = None
         self.calib_points: list[tuple[float, float]] = []
         self.calibrating = False
         self.message = ""
         self.camera_unavailable = False
         self.opener: CameraOpener | None = None
+        self._shown_typing_message = ""
         self._build_ui()
         self._refresh_cameras()
         self.timer = QTimer(self, interval=250, timeout=self._update_diagnostics)
@@ -128,7 +132,7 @@ class MainWindow(QWidget):
             side.addWidget(w)
         side.addLayout(cam_row)
         for w in (self.start_btn, self.draw_mode_box, self.draw_chk, self.mirror_chk, self.flip_chk, clear, self.new_game_btn, self.calib_btn,
-                  self.confirm_btn, reset, self.sensitivity_ctl, self.mapping_label, self.hint, self.diag):
+                  self.confirm_btn, reset, self.typing_ctl, self.mapping_label, self.hint, self.diag):
             side.addWidget(w)
         side.addStretch(1)
         panel = QWidget()
@@ -254,6 +258,7 @@ class MainWindow(QWidget):
         raw = det.tip_px
         self.last_tip_raw = raw
         if self.mode == 2:
+            self.typing.maybe_auto_calibrate(self.camera.latest, time.monotonic())
             self.typing.on_detection(det, time.monotonic())
         elif self.chess_mode:
             self._update_chess(det)
@@ -314,11 +319,15 @@ class MainWindow(QWidget):
         self.clear_btn.setText("Clear Canvas" if row == 0 else "Clear Text")
         self.new_game_btn.setVisible(row == 1)
         self.confirm_btn.setVisible(row != 2)
-        self.sensitivity_ctl.setVisible(row == 2)
+        self.typing_ctl.setVisible(row == 2)
         self.calib_btn.setText("Calibrate Keyboard (click 4 corners)" if row == 2 else "Calibrate")
         self.message = ("Make the preview upright (Mirror / Flip Vertical), then Calibrate Keyboard."
                         if row == 2 else "")
         self.canvas.update()
+
+    def _on_auto_detect(self, on: bool):
+        self.settings.setValue("auto_detect_keyboard", on)
+        self.typing.auto_detect = on
 
     def _on_sensitivity(self, level: int):
         self.settings.setValue("typing_sensitivity", level)
@@ -440,6 +449,8 @@ class MainWindow(QWidget):
     # ---- diagnostics --------------------------------------------------------------------
     def _update_diagnostics(self):
         w = self.worker
+        if self.mode == 2 and self.typing.message != self._shown_typing_message:
+            self._shown_typing_message = self.message = self.typing.message   # set by the background detection
         if self.camera.error and w is not None:
             self._stop_camera()
             self.camera_unavailable = True
@@ -480,5 +491,6 @@ class MainWindow(QWidget):
     def closeEvent(self, event):
         if self.opener is not None:
             self.opener.wait()
+        self.typing.wait_for_job()
         self._stop_camera()
         super().closeEvent(event)

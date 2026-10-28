@@ -1,14 +1,16 @@
 """Keyboard-typing glue: click calibration on the camera preview, preview overlay, detections -> TypingSession."""
 import time
 
-from PySide6.QtCore import QPointF, Qt, Signal
+import cv2
+from PySide6.QtCore import QPointF, QThread, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPixmap, QPolygonF
-from PySide6.QtWidgets import QLabel, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
 
 from . import config
 from .calibration import CORNER_NAMES, CalibrationError, CoordinateMapper
 from .hand_slots import HandSlots
 from .hand_tracker import Detection
+from .keyboard_detect import Detection as KeyboardFound, detect_keyboard
 from .keyboard_layout import KEYS, LAYOUT_H, LAYOUT_W, base_char
 from .typing_session import FINGERTIPS, TypingSession
 
@@ -33,29 +35,48 @@ def real_char(event) -> str | None:
     return base_char(text) if len(text) == 1 and text.isprintable() else None
 
 
-class SensitivityControl(QWidget):
-    """Slider 1..10 for how small a finger movement still counts as a key press."""
-    changed = Signal(int)
+class TypingControls(QWidget):
+    """Typing-mode panel: automatic keyboard detection and the sensitivity slider (1..10)."""
+    auto_toggled = Signal(bool)
+    auto_clicked = Signal()
+    sensitivity_changed = Signal(int)
 
-    def __init__(self, level: int):
+    def __init__(self, sensitivity: int, auto: bool):
         super().__init__()
+        self.auto_chk = QCheckBox("Auto-detect keyboard")
+        self.auto_chk.setChecked(auto)
+        self.auto_chk.toggled.connect(self.auto_toggled)
+        self.auto_btn = QPushButton("Auto-calibrate Keyboard now")
+        self.auto_btn.clicked.connect(self.auto_clicked)
         self.label = QLabel()
         self.slider = QSlider(Qt.Horizontal)
         self.slider.setRange(1, 10)
-        self.slider.setValue(level)
+        self.slider.setValue(sensitivity)
         self.slider.valueChanged.connect(self._on_change)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.label)
-        layout.addWidget(self.slider)
-        self._update_label(level)
+        for w in (self.auto_chk, self.auto_btn, self.label, self.slider):
+            layout.addWidget(w)
+        self._update_label(sensitivity)
 
     def _update_label(self, level: int) -> None:
         self.label.setText(f"Typing sensitivity: {level}/10 (higher = smaller movements count, more false keys)")
 
     def _on_change(self, level: int) -> None:
         self._update_label(level)
-        self.changed.emit(level)
+        self.sensitivity_changed.emit(level)
+
+
+class DetectJob(QThread):
+    """Runs the keyboard detector off the UI thread (about a quarter of a second of OpenCV)."""
+    done = Signal(object)   # KeyboardFound | None
+
+    def __init__(self, frame):
+        super().__init__()
+        self._frame = frame
+
+    def run(self) -> None:
+        self.done.emit(detect_keyboard(self._frame))
 
 
 class PreviewLabel(QLabel):
@@ -74,10 +95,61 @@ class TypingMode:
         self.calibrating = False
         self.pending: list[tuple[float, float]] = []   # clicked view points
         self.message = ""
+        self.auto_detect = True
+        self._job: DetectJob | None = None
+        self._job_view: tuple | None = None     # (mirror, flip, frame size) the running job's frame was prepared for
+        self._last_try = 0.0
 
     @property
     def ready(self) -> bool:
         return self.mapper.calibrated and not self.calibrating
+
+    # ---- automatic keyboard detection ----
+    def _view_key(self) -> tuple:
+        return (self.mapper.mirror, self.mapper.flip_vertical, self.mapper.frame_size)
+
+    def maybe_auto_calibrate(self, latest_frame, now: float, force: bool = False) -> None:
+        """Start a background detection when uncalibrated (retrying every few seconds) or when forced."""
+        if self._job is not None or self.calibrating:
+            return
+        if not force and (not self.auto_detect or self.mapper.calibrated or now - self._last_try < config.KEYBOARD_DETECT_RETRY_S):
+            return
+        item = latest_frame()
+        if item is None:
+            return
+        frame = item[1]
+        if self.mapper.mirror:
+            frame = cv2.flip(frame, 1)
+        if self.mapper.flip_vertical:
+            frame = cv2.flip(frame, 0)     # same transforms as CoordinateMapper.to_view, so corners are view coordinates
+        self._last_try, self._job_view = now, self._view_key()
+        self.message = "Looking for the keyboard…"
+        self._job = DetectJob(frame.copy())
+        self._job.done.connect(self._on_detected)
+        self._job.start()
+
+    def _on_detected(self, found: KeyboardFound | None) -> None:
+        job, self._job = self._job, None
+        if job is not None:
+            job.wait()
+        if self._job_view != self._view_key() or self.calibrating:
+            return    # orientation changed or the user started clicking while it ran: the result no longer applies
+        if found is None:
+            self.message = ("Keyboard not found automatically: keep the whole keyboard in view and sharp, "
+                            "or use Calibrate Keyboard and click the 4 corners.")
+            return
+        try:
+            self.mapper.calibrate(found.corners)
+        except CalibrationError as exc:
+            self.message = f"Automatic detection gave an unusable result ({exc}). Calibrate by clicking instead."
+            return
+        self.session.update({}, time.monotonic())
+        self.message = (f"Keyboard found automatically (match {found.cost:.2f}, lower is better). "
+                        "If the grid looks off, use Calibrate Keyboard to click the corners.")
+
+    def wait_for_job(self) -> None:
+        if self._job is not None:
+            self._job.wait()
 
     # ---- calibration (mouse clicks on the preview) ----
     def start_calibration(self) -> None:

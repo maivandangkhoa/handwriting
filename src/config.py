@@ -55,6 +55,7 @@ CHESS_ORIGIN = ((CANVAS_WIDTH - 8 * CHESS_SQUARE) // 2, (CANVAS_HEIGHT - 8 * CHE
 
 # Keyboard typing mode. Speeds are in key units per second (1 unit = one standard key width, ~19 mm).
 TYPING_NUM_HANDS = 2
+TYPING_MIN_CONFIDENCE = 0.35       # looser detect/presence/tracking thresholds so the second hand is picked up from above
 TYPING_FILTER_MIN_CUTOFF = 3.0     # One Euro filter per fingertip, in key units
 TYPING_FILTER_BETA = 1.0
 TYPING_V_MOVE = 3.0                # faster than this arms a fingertip ("it travelled to a key")

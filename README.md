@@ -66,7 +66,8 @@ played by you (hot-seat); rules and legality come from [`python-chess`](https://
 
 ## Keyboard typing application (experimental)
 Choose **Keyboard typing (camera reads keys)**. The camera looks at your keyboard from above; the app tries to infer
-which key a fingertip pressed and types it into the "Read by camera" box. Two hands, five fingertips each.
+which key a fingertip pressed and types it into the "Read by camera" box. Two hands, five fingertips each (hands are told apart by wrist position, not MediaPipe's unreliable Left/Right label;
+the detection thresholds are loosened to `TYPING_MIN_CONFIDENCE` in this mode so the second hand is picked up).
 1. Optional: if the camera sees the keyboard upside down (a 180 degree rotation) turn **Mirror + Flip Vertical** both
    on so letters read normally. Calibration works either way because the steps name *keys*, not directions.
 2. **Calibrate Keyboard**, then *click* four corners of the whole key area on the camera preview, in this order:

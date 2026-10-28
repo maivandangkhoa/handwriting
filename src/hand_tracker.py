@@ -44,6 +44,7 @@ class Detection:
 class HandTracker:
     def __init__(self, model_path: Path = config.MODEL_PATH, num_hands: int = config.NUM_HANDS):
         self.num_hands = num_hands
+        loose = num_hands > 1   # typing: favour finding both hands over avoiding the occasional false hand
         if not Path(model_path).is_file():
             raise ModelError(
                 f"Hand Landmarker model not found at {model_path}. Run: python scripts/download_model.py"
@@ -53,9 +54,9 @@ class HandTracker:
                 base_options=BaseOptions(model_asset_path=str(model_path)),
                 running_mode=vision.RunningMode.VIDEO,
                 num_hands=num_hands,
-                min_hand_detection_confidence=config.MIN_DETECTION_CONFIDENCE,
-                min_hand_presence_confidence=config.MIN_PRESENCE_CONFIDENCE,
-                min_tracking_confidence=config.MIN_TRACKING_CONFIDENCE,
+                min_hand_detection_confidence=config.TYPING_MIN_CONFIDENCE if loose else config.MIN_DETECTION_CONFIDENCE,
+                min_hand_presence_confidence=config.TYPING_MIN_CONFIDENCE if loose else config.MIN_PRESENCE_CONFIDENCE,
+                min_tracking_confidence=config.TYPING_MIN_CONFIDENCE if loose else config.MIN_TRACKING_CONFIDENCE,
             )
             self._landmarker = vision.HandLandmarker.create_from_options(options)
         except Exception as exc:  # MediaPipe raises bare RuntimeError/ValueError for bad assets

@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QLabel
 
 from . import config
 from .calibration import CORNER_NAMES, CalibrationError, CoordinateMapper
+from .hand_slots import HandSlots
 from .hand_tracker import Detection
 from .keyboard_layout import KEYS, LAYOUT_H, LAYOUT_W
 from .typing_session import FINGERTIPS, TypingSession
@@ -31,6 +32,7 @@ class TypingMode:
     def __init__(self, frame_size: tuple[int, int], mirror: bool, flip_vertical: bool):
         self.mapper = CoordinateMapper(frame_size, (LAYOUT_W, LAYOUT_H), mirror=mirror, flip_vertical=flip_vertical)
         self.session = TypingSession()
+        self.slots = HandSlots(max_slots=config.TYPING_NUM_HANDS)
         self.calibrating = False
         self.pending: list[tuple[float, float]] = []   # clicked view points
         self.message = ""
@@ -42,6 +44,7 @@ class TypingMode:
     # ---- calibration (mouse clicks on the preview) ----
     def start_calibration(self) -> None:
         self.calibrating, self.pending = True, []
+        self.slots.reset()
         self.session.update({}, time.monotonic())
         self._prompt()
 
@@ -84,12 +87,19 @@ class TypingMode:
     def on_detection(self, det: Detection, now: float) -> None:
         points = {}
         if self.ready:
-            for i, hand in enumerate(det.hands):
-                label = det.handedness[i] if i < len(det.handedness) and det.handedness[i] else str(i)
+            # Hand identity comes from wrist continuity, not MediaPipe's Left/Right label (unreliable from above).
+            mapped = [[self.mapper.map((float(x), float(y)), clamp=False) for x, y in hand] for hand in det.hands]
+            wrists = [m[0] for m in mapped if m[0] is not None]
+            ids = iter(self.slots.assign(wrists))
+            for hand_pts in mapped:
+                slot = next(ids) if hand_pts[0] is not None else None
+                if slot is None:
+                    continue
                 for name, idx in FINGERTIPS.items():
-                    pt = self.mapper.map((float(hand[idx][0]), float(hand[idx][1])), clamp=False)
-                    if pt is not None:
-                        points[f"{label}-{name}"] = pt
+                    if hand_pts[idx] is not None:
+                        points[f"hand{slot}-{name}"] = hand_pts[idx]
+        else:
+            self.slots.reset()
         self.session.update(points, now)
 
     def stats_text(self, now: float) -> str:

@@ -1,10 +1,11 @@
 """PySide6 main window: canvas, preview, controls, diagnostics, calibration flow."""
 import logging
+import time
 
-from PySide6.QtCore import QSettings, Qt, QTimer
+from PySide6.QtCore import QEvent, QSettings, Qt, QTimer
 from PySide6.QtGui import QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
+    QApplication, QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
 from . import config
@@ -15,6 +16,8 @@ from .camera import Camera, list_cameras
 from .drawing import DrawingState
 from .filters import OneEuroFilter2D
 from .gesture import PinchDetector, pinch_point
+from .keyboard_layout import base_char
+from .typing_mode import PreviewLabel, TypingMode
 from .worker import CameraOpener, TrackingWorker
 
 log = logging.getLogger(__name__)
@@ -28,7 +31,7 @@ class MainWindow(QWidget):
         self.worker: TrackingWorker | None = None
         self.state = DrawingState(OneEuroFilter2D())
         self.game = ChessGame()
-        self.chess_mode = False
+        self.mode = 0   # 0 = Air Drawing, 1 = Chess, 2 = Keyboard typing
         self.pinch = PinchDetector()
         self.pointer_smoother = OneEuroFilter2D()
         self.settings = QSettings("FingerTrace", "FingerTrace")
@@ -37,6 +40,7 @@ class MainWindow(QWidget):
         self.pinch_to_draw = self.settings.value("pinch_to_draw", True, type=bool)
         self.mapper = CoordinateMapper((config.CAMERA_REQUEST_WIDTH, config.CAMERA_REQUEST_HEIGHT), CANVAS_SIZE,
                                        mirror=mirror, flip_vertical=flip_v)
+        self.typing = TypingMode(self.mapper.frame_size, mirror, flip_v)
         self.last_tip_raw: tuple[float, float] | None = None
         self.calib_points: list[tuple[float, float]] = []
         self.calibrating = False
@@ -48,11 +52,17 @@ class MainWindow(QWidget):
         self.timer = QTimer(self, interval=250, timeout=self._update_diagnostics)
         self.timer.start()
         self._update_diagnostics()
+        QApplication.instance().installEventFilter(self)  # real keystrokes = ground truth in typing mode
+
+    @property
+    def chess_mode(self) -> bool:
+        return self.mode == 1
 
     # ---- layout -------------------------------------------------------------------------
     def _build_ui(self):
         self.canvas = CanvasWidget(self.state)
-        self.preview = QLabel("Camera stopped")
+        self.preview = PreviewLabel("Camera stopped")
+        self.preview.clicked.connect(self._on_preview_click)
         self.preview.setFixedSize(config.PREVIEW_WIDTH, config.PREVIEW_WIDTH * 9 // 16)
         self.preview.setAlignment(Qt.AlignCenter)
         self.preview.setFrameShape(QFrame.Box)
@@ -65,7 +75,7 @@ class MainWindow(QWidget):
         self.diag.setStyleSheet("font-family: Menlo, monospace;")
 
         self.app_box = QComboBox()
-        self.app_box.addItems(["Air Drawing", "Chess (pinch to move pieces)"])
+        self.app_box.addItems(["Air Drawing", "Chess (pinch to move pieces)", "Keyboard typing (camera reads keys)"])
         self.app_box.activated.connect(self._on_app_selected)
         self.camera_box = QComboBox()
         self.camera_box.activated.connect(self._on_camera_selected)  # user-driven only, not programmatic changes
@@ -87,8 +97,7 @@ class MainWindow(QWidget):
         self.flip_chk.setChecked(self.mapper.flip_vertical)
         self.flip_chk.toggled.connect(self._on_flip_vertical)
         clear = QPushButton("Clear Canvas")
-        clear.clicked.connect(self.state.clear)
-        clear.clicked.connect(self.canvas.update)
+        clear.clicked.connect(self._on_clear)
         self.clear_btn = clear
         self.new_game_btn = QPushButton("New Game")
         self.new_game_btn.clicked.connect(self._new_game)
@@ -100,8 +109,10 @@ class MainWindow(QWidget):
         self.confirm_btn.setEnabled(False)
         reset = QPushButton("Reset Calibration")
         reset.clicked.connect(self._reset_calibration)
-        QShortcut(QKeySequence(Qt.Key_Space), self, activated=self._confirm_point)
-        QShortcut(QKeySequence(Qt.Key_Escape), self, activated=self._cancel_calibration)
+        self.shortcuts = [  # disabled in typing mode so Space/Esc reach the keystroke logger
+            QShortcut(QKeySequence(Qt.Key_Space), self, activated=self._confirm_point),
+            QShortcut(QKeySequence(Qt.Key_Escape), self, activated=self._cancel_calibration),
+        ]
 
         cam_row = QHBoxLayout()
         cam_row.addWidget(self.camera_box, 1)
@@ -192,9 +203,11 @@ class MainWindow(QWidget):
     def _on_opened(self, info):
         self._finish_open()
         self.mapper.set_frame_size((info.width, info.height))
+        self.typing.mapper.set_frame_size((info.width, info.height))
         self.worker = TrackingWorker(self.camera)
         self.worker.mirror = self.mirror_chk.isChecked()
         self.worker.flip_vertical = self.flip_chk.isChecked()
+        self.worker.num_hands = config.TYPING_NUM_HANDS if self.mode == 2 else config.NUM_HANDS
         self.worker.result.connect(self._on_result)
         self.worker.failed.connect(self._on_failed)
         self.worker.start()
@@ -211,6 +224,8 @@ class MainWindow(QWidget):
             self.worker = None
         self.state.update(None)
         self.game.update(None, False)
+        self.typing.session.update({}, time.monotonic())
+        self.typing.cancel_calibration()
         self.pointer_smoother.reset()
         self.canvas.pinching = False
         self.last_tip_raw = None
@@ -228,10 +243,15 @@ class MainWindow(QWidget):
 
     # ---- per-frame ----------------------------------------------------------------------
     def _on_result(self, image, det):
-        self.preview.setPixmap(QPixmap.fromImage(image))
+        pixmap = QPixmap.fromImage(image)
+        if self.mode == 2:
+            self.typing.overlay(pixmap)
+        self.preview.setPixmap(pixmap)
         raw = det.tip_px
         self.last_tip_raw = raw
-        if self.chess_mode:
+        if self.mode == 2:
+            self.typing.on_detection(det, time.monotonic())
+        elif self.chess_mode:
             self._update_chess(det)
         elif self.calibrating:
             self.state.update(None)
@@ -270,16 +290,65 @@ class MainWindow(QWidget):
 
     # ---- application selection ----------------------------------------------------------
     def _on_app_selected(self, row: int):
-        self.chess_mode = row == 1
-        self.canvas.game = self.game if self.chess_mode else None
+        self._cancel_calibration()
+        self.typing.cancel_calibration()
+        self.mode = row
+        self.canvas.game = self.game if row == 1 else None
+        self.canvas.typing = self.typing if row == 2 else None
         self.state.update(None)
         self.game.update(None, False)
+        self.typing.session.update({}, time.monotonic())
         self.pointer_smoother.reset()
         self.canvas.pinching = False
-        self.draw_chk.setEnabled(not self.chess_mode)
-        self.clear_btn.setVisible(not self.chess_mode)
-        self.new_game_btn.setVisible(self.chess_mode)
+        if self.worker is not None:
+            self.worker.num_hands = config.TYPING_NUM_HANDS if row == 2 else config.NUM_HANDS
+        for sc in self.shortcuts:
+            sc.setEnabled(row != 2)
+        self.draw_mode_box.setVisible(row == 0)
+        self.draw_chk.setVisible(row == 0)
+        self.clear_btn.setVisible(row != 1)
+        self.clear_btn.setText("Clear Canvas" if row == 0 else "Clear Text")
+        self.new_game_btn.setVisible(row == 1)
+        self.confirm_btn.setVisible(row != 2)
+        self.calib_btn.setText("Calibrate Keyboard (click 4 corners)" if row == 2 else "Calibrate")
+        self.message = ("Make the preview upright (Mirror / Flip Vertical), then Calibrate Keyboard."
+                        if row == 2 else "")
         self.canvas.update()
+
+    def _on_clear(self):
+        if self.mode == 2:
+            self.typing.session.clear()
+        else:
+            self.state.clear()
+        self.canvas.update()
+
+    def _on_preview_click(self, x: float, y: float):
+        if self.mode == 2:
+            self.typing.click(x, y, self.preview)
+            self.message = self.typing.message
+            self.canvas.update()
+
+    def eventFilter(self, obj, event):
+        """In typing mode, record real keystrokes as ground truth and keep them away from the buttons/combos."""
+        if self.mode == 2 and event.type() == QEvent.KeyPress and self.isActiveWindow():
+            if event.modifiers() & (Qt.ControlModifier | Qt.MetaModifier):
+                return False  # leave Cmd+Q etc. alone
+            if not event.isAutoRepeat() and (ch := self._real_char(event)) is not None:
+                self.typing.session.real_key(ch, time.monotonic())
+            return True
+        return super().eventFilter(obj, event)
+
+    @staticmethod
+    def _real_char(event) -> str | None:
+        key = event.key()
+        if key == Qt.Key_Backspace:
+            return "\b"
+        if key in (Qt.Key_Return, Qt.Key_Enter):
+            return "\n"
+        if key == Qt.Key_Tab:
+            return "\t"
+        text = event.text()
+        return base_char(text) if len(text) == 1 and text.isprintable() else None
 
     def _new_game(self):
         self.game.new_game()
@@ -288,6 +357,7 @@ class MainWindow(QWidget):
     def _on_mirror(self, on: bool):
         self.settings.setValue("mirror", on)
         self.mapper.set_mirror(on)  # also invalidates calibration (stored in view coordinates)
+        self.typing.mapper.set_mirror(on)
         if self.worker is not None:
             self.worker.mirror = on
         self._orientation_changed("Mirror")
@@ -295,12 +365,14 @@ class MainWindow(QWidget):
     def _on_flip_vertical(self, on: bool):
         self.settings.setValue("flip_vertical", on)
         self.mapper.set_flip_vertical(on)
+        self.typing.mapper.set_flip_vertical(on)
         if self.worker is not None:
             self.worker.flip_vertical = on
         self._orientation_changed("Vertical flip")
 
     def _orientation_changed(self, what: str):
         self.state.end_stroke()
+        self.typing.cancel_calibration()
         self.game.update(None, False)  # a pointer jump from re-mapping must not move a held piece
         if self.calibrating:
             self._start_calibration()
@@ -311,6 +383,10 @@ class MainWindow(QWidget):
     def _start_calibration(self):
         if self.worker is None:
             self.message = "Start the camera before calibrating."
+            return
+        if self.mode == 2:
+            self.typing.start_calibration()
+            self.message = self.typing.message
             return
         self.calibrating = True
         self.calib_points = []
@@ -359,6 +435,8 @@ class MainWindow(QWidget):
 
     def _reset_calibration(self):
         self.mapper.reset()
+        self.typing.mapper.reset()
+        self.typing.cancel_calibration()
         self._end_calibration()
         self.message = "Calibration reset: using linear fallback mapping."
 
@@ -373,13 +451,17 @@ class MainWindow(QWidget):
             status = "Opening camera…"
         elif w is None:
             status = "Camera unavailable" if self.camera_unavailable else "Camera stopped"
-        elif not self.chess_mode and not self.state.draw_enabled:
+        elif self.mode == 0 and not self.state.draw_enabled:
             status = "Paused"
         else:
-            seen = self.game.pointer is not None if self.chess_mode else self.state.cursor is not None
+            seen = (bool(self.typing.session.fingertips) if self.mode == 2 else
+                    self.game.pointer is not None if self.chess_mode else self.state.cursor is not None)
             status = "Hand detected" if seen else "No hand detected"
         self.status.setText(status)
-        if self.mapper.calibrated:
+        if self.mode == 2:
+            self.mapping_label.setText("Keyboard mapping: calibrated (homography)" if self.typing.mapper.calibrated
+                                       else "Keyboard mapping: NOT calibrated — typing disabled")
+        elif self.mapper.calibrated:
             self.mapping_label.setText("Mapping: calibrated (homography)")
         else:
             self.mapping_label.setText("Mapping: UNCALIBRATED — linear fallback over full camera frame")
@@ -395,6 +477,7 @@ class MainWindow(QWidget):
             f"resolution   : {info.width}x{info.height} (driver FPS {info.fps:.0f})\n"
             f"hands        : {w.last_hand_count}\n"
             f"dropped      : {w.dropped} camera frames skipped"
+            + (f"\n{self.typing.stats_text(time.monotonic())}" if self.mode == 2 else "")
         )
 
     def closeEvent(self, event):

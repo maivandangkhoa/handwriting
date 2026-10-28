@@ -63,6 +63,7 @@ class CoordinateMapper:
         self._mirror = mirror
         self._flip_vertical = flip_vertical
         self._homography: np.ndarray | None = None
+        self._inverse: np.ndarray | None = None
 
     @property
     def mirror(self) -> bool:
@@ -98,6 +99,7 @@ class CoordinateMapper:
 
     def reset(self) -> None:
         self._homography = None
+        self._inverse = None
 
     def calibrate(self, view_points: list[Point]) -> None:
         validate_points(view_points, self.frame_size)
@@ -108,9 +110,24 @@ class CoordinateMapper:
         if not np.all(np.isfinite(matrix)):
             raise CalibrationError("Could not compute a valid transform from these points.")
         self._homography = matrix
+        self._inverse = np.linalg.inv(matrix)
 
-    def map(self, raw: Point) -> Point | None:
-        """Canvas coordinates (clamped to the canvas) for a raw fingertip, or None if the transform is invalid."""
+    def canvas_to_view(self, pt: Point) -> Point | None:
+        """Inverse of the calibrated transform: a canvas point as view coordinates (e.g. to overlay it on the preview)."""
+        out = self.canvas_to_view_many([pt])
+        return None if out is None else out[0]
+
+    def canvas_to_view_many(self, pts: list[Point]) -> list[Point] | None:
+        """`canvas_to_view` for many points in one call; None if uncalibrated or any result is not finite."""
+        if self._inverse is None:
+            return None
+        src = np.array([pts], dtype=np.float32)
+        out = cv2.perspectiveTransform(src, self._inverse)[0]
+        return [(float(x), float(y)) for x, y in out] if np.all(np.isfinite(out)) else None
+
+    def map(self, raw: Point, clamp: bool = True) -> Point | None:
+        """Canvas coordinates for a raw fingertip (clamped to the canvas unless `clamp=False`), or None if the
+        transform is invalid."""
         vx, vy = self.to_view(raw)
         cw, ch = self.canvas_size
         if self._homography is None:
@@ -121,4 +138,6 @@ class CoordinateMapper:
             x, y = cv2.perspectiveTransform(src, self._homography)[0, 0]
         if not (math.isfinite(x) and math.isfinite(y)):
             return None
+        if not clamp:
+            return (float(x), float(y))
         return (min(max(float(x), 0.0), cw), min(max(float(y), 0.0), ch))

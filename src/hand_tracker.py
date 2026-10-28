@@ -1,7 +1,7 @@
 """MediaPipe Hand Landmarker wrapper (CPU, VIDEO running mode). No Qt, no camera."""
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import cv2
@@ -30,6 +30,8 @@ class Detection:
     landmarks_px: np.ndarray | None   # (21, 2) raw-frame pixels of the first hand, or None
     hand_count: int
     inference_ms: float               # time spent in detect_for_video only (not end-to-end latency)
+    hands: list = field(default_factory=list)        # every detected hand, each (21, 2) raw-frame pixels
+    handedness: list = field(default_factory=list)   # "Left"/"Right" per hand (MediaPipe's label)
 
     @property
     def tip_px(self) -> tuple[float, float] | None:
@@ -40,7 +42,8 @@ class Detection:
 
 
 class HandTracker:
-    def __init__(self, model_path: Path = config.MODEL_PATH):
+    def __init__(self, model_path: Path = config.MODEL_PATH, num_hands: int = config.NUM_HANDS):
+        self.num_hands = num_hands
         if not Path(model_path).is_file():
             raise ModelError(
                 f"Hand Landmarker model not found at {model_path}. Run: python scripts/download_model.py"
@@ -49,7 +52,7 @@ class HandTracker:
             options = vision.HandLandmarkerOptions(
                 base_options=BaseOptions(model_asset_path=str(model_path)),
                 running_mode=vision.RunningMode.VIDEO,
-                num_hands=config.NUM_HANDS,
+                num_hands=num_hands,
                 min_hand_detection_confidence=config.MIN_DETECTION_CONFIDENCE,
                 min_hand_presence_confidence=config.MIN_PRESENCE_CONFIDENCE,
                 min_tracking_confidence=config.MIN_TRACKING_CONFIDENCE,
@@ -71,8 +74,9 @@ class HandTracker:
         ms = (time.perf_counter() - start) * 1000.0
         if not result.hand_landmarks:
             return Detection(None, 0, ms)
-        pts = np.array([[lm.x * w, lm.y * h] for lm in result.hand_landmarks[0]], dtype=np.float32)
-        return Detection(pts, len(result.hand_landmarks), ms)
+        hands = [np.array([[lm.x * w, lm.y * h] for lm in hand], dtype=np.float32) for hand in result.hand_landmarks]
+        labels = [(cats[0].category_name if cats else "") for cats in result.handedness]
+        return Detection(hands[0], len(hands), ms, hands, labels)
 
     def close(self) -> None:
         self._landmarker.close()

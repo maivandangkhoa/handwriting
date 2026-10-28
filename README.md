@@ -64,6 +64,30 @@ played by you (hot-seat); rules and legality come from [`python-chess`](https://
   the board is in the middle of the canvas, so the uncalibrated fallback already works roughly).
 - Pinch thresholds (`PINCH_ON_RATIO` / `PINCH_OFF_RATIO`) and board size are in `src/config.py`.
 
+## Keyboard typing application (experimental)
+Choose **Keyboard typing (camera reads keys)**. The camera looks at your keyboard from above; the app tries to infer
+which key a fingertip pressed and types it into the "Read by camera" box. Two hands, five fingertips each.
+1. Make the preview upright: a camera that sees the keyboard upside down needs **Mirror + Flip Vertical** both on
+   (a 180 degree rotation); letters should read normally. Changing these resets calibration.
+2. **Calibrate Keyboard**, then *click* the four corners of the key block on the camera preview, in order: top-left of
+   the \` key, top-right of the delete key, bottom-right of the arrow-key cluster, bottom-left of the fn key
+   (the function-key row is not included). The cyan grid drawn on the preview shows where the app thinks each key is;
+   if it does not line up with your keys, recalibrate.
+3. Type on the real keyboard as normal. The window must be focused; your real keystrokes are only used locally as
+   ground truth and are compared with the camera's guesses (accuracy / wrong / missed / false in Diagnostics).
+   The real keystrokes never reach the UI controls while this mode is active.
+
+**How a press is inferred** (`src/press_detector.py`): from 2D fingertip motion only. A fingertip must *travel* over
+the keyboard (> `TYPING_V_MOVE`) and then *stop* (< `TYPING_V_STOP`) for `TYPING_DWELL_S`; that fires one press on
+the key under it, and it must move again before it can fire again. Resting fingers never type. Thumbs only type
+space. All thresholds are in `src/config.py` (key units per second; 1 unit ~ 19 mm).
+
+Known limits of this approach (one RGB camera has no reliable depth): repeating the *same* key without in-plane finger
+movement is usually missed; fingers pausing over keys while repositioning can type by mistake; the fingertip is above
+the key surface so an oblique camera sees it displaced from the key it presses; Shift/modifiers and uppercase are
+not interpreted; accuracy has not been measured on real hands yet. Use the Diagnostics accuracy line to tune the
+thresholds, and treat anything below ~90% as "not yet usable for typing".
+
 ## Troubleshooting
 | Symptom | Fix |
 |---|---|
@@ -75,7 +99,7 @@ played by you (hot-seat); rules and legality come from [`python-chess`](https://
 
 ## Layout
 `src/camera.py` capture thread · `hand_tracker.py` MediaPipe · `worker.py` tracking thread/preview ·
-`filters.py` One Euro smoothing · `calibration.py` mapping · `gesture.py` pinch · `chess_game.py` chess interaction · `canvas.py` rendering · `drawing.py` strokes · `metrics.py` FPS/timing · `ui.py` window · `config.py` constants.
+`filters.py` One Euro smoothing · `calibration.py` mapping · `gesture.py` pinch · `keyboard_layout.py` / `press_detector.py` / `typing_session.py` / `typing_eval.py` / `typing_mode.py` / `typing_view.py` keyboard app · `chess_game.py` chess interaction · `canvas.py` rendering · `drawing.py` strokes · `metrics.py` FPS/timing · `ui.py` window · `config.py` constants.
 
 ## Known limitations
 Air-drawing has no contact detection; depth/perspective makes the canvas area depend on hand distance.

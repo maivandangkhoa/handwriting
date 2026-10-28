@@ -19,8 +19,8 @@ def render_preview(frame: np.ndarray, det: Detection, mirror: bool, flip_vertica
     h, w = frame.shape[:2]
     scale = config.PREVIEW_WIDTH / w
     img = cv2.resize(frame, (config.PREVIEW_WIDTH, int(h * scale)))
-    if det.landmarks_px is not None:
-        pts = (det.landmarks_px * scale).astype(int)
+    for hand in det.hands or ([det.landmarks_px] if det.landmarks_px is not None else []):
+        pts = (hand * scale).astype(int)
         for a, b in HAND_CONNECTIONS:
             cv2.line(img, tuple(pts[a]), tuple(pts[b]), (0, 255, 0), 2)
         for p in pts:
@@ -41,6 +41,7 @@ class TrackingWorker(QThread):
         self._camera = camera
         self.mirror = True
         self.flip_vertical = False
+        self.num_hands = config.NUM_HANDS   # the UI raises this to 2 for typing; applied live in run()
         self.fps = RateCounter(config.METRICS_WINDOW_SECONDS)
         self.inference_ms = TimingStat()
         self.processed = 0
@@ -52,7 +53,7 @@ class TrackingWorker(QThread):
 
     def run(self) -> None:
         try:
-            tracker = HandTracker()  # created here so MediaPipe lives on this thread
+            tracker = HandTracker(num_hands=self.num_hands)  # created here so MediaPipe lives on this thread
         except ModelError as exc:
             self.failed.emit(str(exc))
             return
@@ -64,6 +65,9 @@ class TrackingWorker(QThread):
                     self.msleep(2)
                     continue
                 last_seq, frame = item
+                if self.num_hands != tracker.num_hands:
+                    tracker.close()
+                    tracker = HandTracker(num_hands=self.num_hands)
                 det = tracker.detect(frame)
                 self.processed += 1
                 self.fps.tick()

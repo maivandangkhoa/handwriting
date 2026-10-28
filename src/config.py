@@ -52,3 +52,12 @@ PINCH_OFF_RATIO = 0.50
 # Chess board in logical canvas coordinates
 CHESS_SQUARE = 88
 CHESS_ORIGIN = ((CANVAS_WIDTH - 8 * CHESS_SQUARE) // 2, (CANVAS_HEIGHT - 8 * CHESS_SQUARE) // 2)
+
+# Keyboard typing mode. Speeds are in key units per second (1 unit = one standard key width, ~19 mm).
+TYPING_NUM_HANDS = 2
+TYPING_FILTER_MIN_CUTOFF = 3.0     # One Euro filter per fingertip, in key units
+TYPING_FILTER_BETA = 1.0
+TYPING_V_MOVE = 3.0                # faster than this arms a fingertip ("it travelled to a key")
+TYPING_V_STOP = 1.2                # slower than this counts as stopped
+TYPING_DWELL_S = 0.12              # stopped this long after travelling = a key press
+TYPING_EVAL_WINDOW_S = 0.6         # a predicted key within this of a real keystroke counts as its match

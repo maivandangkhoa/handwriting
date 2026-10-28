@@ -128,3 +128,14 @@ def test_changing_flip_vertical_resets_calibration():
     m.calibrate(GOOD)
     m.set_flip_vertical(True)
     assert not m.calibrated
+
+
+def test_unclamped_map_and_inverse_round_trip():
+    m = mapper()
+    m.calibrate(GOOD)
+    x, y = m.map((0, 0), clamp=False)
+    assert x < 0 or y < 0                               # outside the calibrated quad stays outside
+    for raw in GOOD:
+        cx, cy = m.map(raw)
+        assert m.canvas_to_view((cx, cy)) == pytest.approx(raw, abs=1e-2)
+    assert mapper().canvas_to_view((1, 1)) is None      # no calibration, no inverse

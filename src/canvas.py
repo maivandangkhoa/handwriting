@@ -8,6 +8,7 @@ import chess
 from . import config
 from .chess_game import ChessGame
 from .drawing import DrawingState
+from .typing_view import paint_typing
 
 CANVAS_SIZE = (config.CANVAS_WIDTH, config.CANVAS_HEIGHT)
 TARGETS = [(0.06, 0.08), (0.94, 0.08), (0.94, 0.92), (0.06, 0.92)]  # TL, TR, BR, BL as canvas fractions
@@ -21,6 +22,7 @@ class CanvasWidget(QWidget):
         super().__init__()
         self.state = state
         self.game: ChessGame | None = None
+        self.typing = None   # TypingMode when the typing app is active
         self.pinching = False
         self.target_index: int | None = None  # calibration target to highlight
         self.setMinimumSize(480, 270)
@@ -35,12 +37,15 @@ class CanvasWidget(QWidget):
         p.setRenderHint(QPainter.Antialiasing)
         p.fillRect(self.rect(), QColor(40, 40, 40))
         rect, s = self._viewport()
-        p.fillRect(rect, QColor(255, 255, 255) if self.game is None else QColor(52, 49, 46))
+        p.fillRect(rect, QColor(255, 255, 255) if self.game is None and self.typing is None else QColor(52, 49, 46))
 
         def to_w(pt):
             return QPointF(rect.x() + pt[0] * s, rect.y() + pt[1] * s)
 
-        if self.game is None:
+        if self.typing is not None:
+            paint_typing(p, to_w, s, self.typing)
+            cursor = None
+        elif self.game is None:
             self._paint_strokes(p, to_w)
             cursor = self.state.cursor
         else:

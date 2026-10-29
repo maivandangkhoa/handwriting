@@ -57,6 +57,11 @@ POINT_OFF_RATIO = 1.50   # curled this far lifts the pen (early, so the fingerti
 CHESS_SQUARE = 76
 CHESS_ORIGIN = ((CANVAS_WIDTH - 8 * CHESS_SQUARE) // 2, (CANVAS_HEIGHT - 8 * CHESS_SQUARE) // 2)
 
+# Gomoku board: GOMOKU_CELLS square cells a side, centred like the chess board.
+GOMOKU_CELLS = 10
+GOMOKU_SQUARE = 62
+GOMOKU_ORIGIN = ((CANVAS_WIDTH - GOMOKU_CELLS * GOMOKU_SQUARE) // 2, (CANVAS_HEIGHT - GOMOKU_CELLS * GOMOKU_SQUARE) // 2)
+
 # Keyboard typing mode. Speeds are in key units per second (1 unit = one standard key width, ~19 mm).
 TYPING_NUM_HANDS = 2
 TYPING_MIN_CONFIDENCE = 0.35       # looser detect/presence/tracking thresholds so the second hand is picked up from above

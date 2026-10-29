@@ -94,6 +94,14 @@ keep the fingertip on a square for about a second (a green arc fills) to select 
 If the shadow references are rejected twice, the app goes on in point-and-hold only. Best fix for the shadow itself:
 put the camera to the side (30-45 degrees off the projector axis) so the shadow lands beside the finger.
 
+## Gomoku (cờ caro) on a projector
+
+Choose *Gomoku on projector*. A 10 x 10 board is projected; calibrate and set the touch references exactly as for
+chess (same discs, shadow touch, point-and-hold fallback). Touch an empty cell to place your stone: X (black) moves
+first, then O (white). Five or more in a row, horizontally, vertically or diagonally, wins and is struck through in red;
+*New Game* starts over. Code: `gomoku_game.py` (rules), `gomoku_view.py` (painting), `projector_gomoku.py` (a
+`ProjectorChess` with a 10 x 10 marker layout).
+
 ## Air Drawing on a projector (move your hand over the canvas)
 
 Choose *Air Drawing on projector* in the Application list. The canvas is shown on the projector as a black page

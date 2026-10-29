@@ -9,6 +9,8 @@ from . import config
 from .chess_game import ChessGame
 from .draw_view import paint_draw_furniture
 from .drawing import DrawingState
+from .gomoku_game import GomokuGame
+from .gomoku_view import paint_gomoku
 from .typing_view import paint_typing
 
 CANVAS_SIZE = (config.CANVAS_WIDTH, config.CANVAS_HEIGHT)
@@ -23,7 +25,7 @@ class CanvasWidget(QWidget):
     def __init__(self, state: DrawingState):
         super().__init__()
         self.state = state
-        self.game: ChessGame | None = None
+        self.game: ChessGame | GomokuGame | None = None
         self.typing = None   # TypingMode when the typing app is active
         self.projector = None   # ProjectorSurface while an app runs on a projector (calibration patterns, ring)
         self.show_cursor = True   # off on the projector itself: the real finger is the cursor, a dot would light it
@@ -73,7 +75,11 @@ class CanvasWidget(QWidget):
             self._paint_strokes(p, to_w)
             cursor = self.state.cursor
         else:
-            self._paint_chess(p, to_w, s)
+            hint = self.projector.hint if self.projector is not None else ""
+            if isinstance(self.game, GomokuGame):
+                paint_gomoku(p, to_w, s, self.game, hint)
+            else:
+                self._paint_chess(p, to_w, s)
             cursor = self.game.pointer
         if self.projector is not None and self.projector.target is not None:
             c = to_w(self.projector.target)

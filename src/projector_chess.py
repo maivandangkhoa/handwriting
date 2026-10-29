@@ -25,13 +25,15 @@ DWELL_S = 0.9         # point-and-hold: a fingertip kept still this long counts 
 DWELL_RADIUS = 0.4    # ...still = within this many squares of where the hold began
 DWELL_TAP_S = 0.15    # how long the synthetic touch lasts
 MAX_REFERENCE_TRIES = 2   # shadow references that fail this often leave point-and-hold as the only touch
-HOLD_ONLY_NOTE = ("The shadow cannot tell touch from hover here. Point-and-hold: keep your fingertip on a square "
-                  "for a second to select it, then hold on the destination.")
 LOSS_GRACE_S = 0.4    # hand lost / off the ring for less than this does not restart the hold
 RING_TOLERANCE = 1.2  # fingertip must be within this many squares of the ring
 
 
 class ProjectorChess(ProjectorSurface):
+    ready_note = "Ready: touch a piece, then touch where it should go."
+    hold_note = ("The shadow cannot tell touch from hover here. Point-and-hold: keep your fingertip on a square "
+                 "for a second to select it, then hold on the destination.")
+
     def __init__(self, game: ChessGame, frame_size: tuple[int, int], canvas_size: tuple[int, int],
                  mirror: bool, flip_vertical: bool):
         super().__init__(frame_size, canvas_size, mirror, flip_vertical)
@@ -166,9 +168,9 @@ class ProjectorChess(ProjectorSurface):
             self._touch_ref = score
             self._enter("hover", "Now lift the fingertip about 3 cm above the ring and hold still.", now)
         elif self.detector.set_references(self._touch_ref, score):
-            self._enter("play", "Ready: touch a piece, then touch where it should go.", now)
+            self._enter("play", self.ready_note, now)
         elif self._reference_failed():
-            self._enter("play", HOLD_ONLY_NOTE, now)
+            self._enter("play", self.hold_note, now)
         else:
             blind = max(self._touch_ref, score) < 0.005
             lead = "No shadow is seen at all: dim the room lights or raise the projector brightness. " if blind else ""
@@ -200,11 +202,11 @@ class ProjectorChess(ProjectorSurface):
             self._anchor, self.dwell = None, 0.0
             self.game.update(None, False)
             self.message = ("Memorising the board… keep your hand away." if not self.detector.ready
-                            else HOLD_ONLY_NOTE if self.hold_only else "")
+                            else self.hold_note if self.hold_only else "")
             return
         self.sample = self.detector.measure(det.frame, det.landmarks_px)
         self.message = ("" if self.sample.ready else "Board changed: take your hand away for a moment.") or (
-            HOLD_ONLY_NOTE if self.hold_only else "")
+            self.hold_note if self.hold_only else "")
         self.game.update(pointer, self._hold(pointer, now) or self.sample.touching)
 
     def _hold(self, pointer, now: float) -> bool:

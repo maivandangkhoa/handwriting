@@ -14,11 +14,11 @@ class MarkerError(ValueError):
     """The discs could not be found; the message tells the user what to change."""
 
 
-def marker_centres(origin: Point, square: float) -> list[Point]:
-    """Centres (canvas pixels) of the board's four corner squares, ordered top-left, top-right, bottom-right,
+def marker_centres(origin: Point, square: float, cells: int = 8) -> list[Point]:
+    """Centres (canvas pixels) of the board's four corner squares (`cells` per side), ordered top-left, top-right, bottom-right,
     bottom-left. The discs sit on the board, so the camera only has to see the board, not the whole canvas."""
     x0, y0 = origin[0] + 0.5 * square, origin[1] + 0.5 * square
-    x1, y1 = origin[0] + 7.5 * square, origin[1] + 7.5 * square
+    x1, y1 = origin[0] + (cells - 0.5) * square, origin[1] + (cells - 0.5) * square
     return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
 
 

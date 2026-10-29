@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 from . import config
 from .canvas import CANVAS_SIZE, CanvasWidget
 from .chess_game import ChessGame
+from .gomoku_game import GomokuGame
 from .calibration import CORNER_NAMES, CalibrationError, CoordinateMapper
 from .camera import Camera
 from .diagnostics import camera_text, mapping_text
@@ -21,6 +22,7 @@ from .preview import PreviewLabel
 from .piano_mode import ProjectorPiano
 from .piano_sound import QtPlayer
 from .projector_chess import ProjectorChess
+from .projector_gomoku import ProjectorGomoku
 from .projector_draw import ProjectorDraw
 from .projector_window import ProjectorControls, ProjectorWindow
 from .typing_mode import TypingControls, TypingMode, real_char
@@ -38,7 +40,8 @@ class MainWindow(CameraLifecycle, QWidget):
         self.worker: TrackingWorker | None = None
         self.state = DrawingState(OneEuroFilter2D())
         self.game = ChessGame()
-        self.mode = 0   # 0 = Air Drawing, 1 = Chess on projector, 2 = Keyboard typing, 3 = Air Drawing on projector, 4 = Piano on projector
+        self.gomoku_game = GomokuGame()
+        self.mode = 0   # 0 = Air Drawing, 1 = Chess, 2 = Keyboard typing, 3 = Air Drawing, 4 = Piano, 5 = Gomoku (1, 3, 4, 5 on the projector)
         self.pinch = PinchDetector()
         self.point = PointDetector()
         self.settings = QSettings("FingerTrace", "FingerTrace")
@@ -52,7 +55,8 @@ class MainWindow(CameraLifecycle, QWidget):
         self.proj = ProjectorChess(self.game, self.mapper.frame_size, CANVAS_SIZE, mirror, flip_v)
         self.draw_proj = ProjectorDraw(self.state, self.mapper.frame_size, CANVAS_SIZE, mirror, flip_v)
         self.piano = ProjectorPiano(self.mapper.frame_size, CANVAS_SIZE, mirror, flip_v)
-        self.mappers = [self.mapper, self.typing.mapper, self.proj.mapper, self.draw_proj.mapper, self.piano.mapper]   # all follow the camera size / orientation
+        self.gomoku = ProjectorGomoku(self.gomoku_game, self.mapper.frame_size, CANVAS_SIZE, mirror, flip_v)
+        self.mappers = [self.mapper, self.typing.mapper, self.proj.mapper, self.draw_proj.mapper, self.piano.mapper, self.gomoku.mapper]   # all follow the camera size / orientation
         self.proj_ctl = ProjectorControls()
         self.proj_ctl.calibrate_clicked.connect(self._calibrate_projector)
         self.proj_ctl.open_clicked.connect(self._open_projector)
@@ -82,12 +86,16 @@ class MainWindow(CameraLifecycle, QWidget):
 
     @property
     def chess_mode(self) -> bool:
-        return self.mode == 1
+        return self.mode in (1, 5)
+
+    @property
+    def active_game(self):
+        return {1: self.game, 5: self.gomoku_game}.get(self.mode)
 
     @property
     def projector_app(self):
         """The projector app of the current mode (chess or drawing), else None."""
-        return {1: self.proj, 3: self.draw_proj, 4: self.piano}.get(self.mode)
+        return {1: self.proj, 3: self.draw_proj, 4: self.piano, 5: self.gomoku}.get(self.mode)
 
     # ---- layout -------------------------------------------------------------------------
     def _build_ui(self):
@@ -108,7 +116,8 @@ class MainWindow(CameraLifecycle, QWidget):
         self.app_box = QComboBox()
         self.app_box.addItems(["Air Drawing", "Chess on projector (touch the pieces)", "Keyboard typing (camera reads keys)",
                                 "Air Drawing on projector (move your hand over the canvas)",
-                                "Piano on projector (tap the keys to play)"])
+                                "Piano on projector (tap the keys to play)",
+                                "Gomoku (cờ caro) on projector (touch a cell)"])
         self.app_box.activated.connect(self._on_app_selected)
         self.camera_box = QComboBox()
         self.camera_box.activated.connect(self._on_camera_selected)  # user-driven only, not programmatic changes
@@ -187,14 +196,13 @@ class MainWindow(CameraLifecycle, QWidget):
             self.worker.stop()
             self.worker = None
         self.state.update(None)
-        self.game.update(None, False)
+        self._release_pointers()
         self.typing.session.update({}, time.monotonic())
         self.typing.cancel_calibration()
         self.canvas.pinching = False
         self.last_tip_raw = None
-        self.proj.camera_stopped()
-        self.draw_proj.camera_stopped()
-        self.piano.camera_stopped()
+        for app in (self.proj, self.draw_proj, self.piano, self.gomoku):
+            app.camera_stopped()
         self._cancel_calibration()
         self.start_btn.setText("Start Camera")
         self.preview.setPixmap(QPixmap())
@@ -221,7 +229,7 @@ class MainWindow(CameraLifecycle, QWidget):
             self.typing.maybe_auto_calibrate(self.camera.latest, time.monotonic())
             self.typing.on_detection(det, time.monotonic())
         elif self.chess_mode:
-            self.proj.on_detection(det, time.monotonic())
+            self.projector_app.on_detection(det, time.monotonic())
         elif self.mode == 4:
             self.piano.on_detection(det, time.monotonic())
         elif self.mode == 3:
@@ -269,10 +277,10 @@ class MainWindow(CameraLifecycle, QWidget):
         self._cancel_calibration()
         self.typing.cancel_calibration()
         self.mode = row
-        self.canvas.game = self.game if row == 1 else None
+        self.canvas.game = self.active_game
         self.canvas.typing = self.typing if row == 2 else None
         self.state.update(None)
-        self.game.update(None, False)
+        self._release_pointers()
         self.typing.session.update({}, time.monotonic())
         self.canvas.pinching = False
         self.canvas.projector = self.projector_app
@@ -283,12 +291,12 @@ class MainWindow(CameraLifecycle, QWidget):
             sc.setEnabled(row != 2)
         self.draw_mode_box.setVisible(row in (0, 3))
         self.draw_chk.setVisible(row in (0, 3))
-        self.clear_btn.setVisible(row not in (1, 4))
+        self.clear_btn.setVisible(row not in (1, 4, 5))
         self.clear_btn.setText("Clear Canvas" if row == 0 else "Clear Text")
-        self.new_game_btn.setVisible(row == 1)
+        self.new_game_btn.setVisible(row in (1, 5))
         self.confirm_btn.setVisible(row == 0)
         self.calib_btn.setVisible(row in (0, 2))
-        self.proj_ctl.setVisible(row in (1, 3, 4))
+        self.proj_ctl.setVisible(row in (1, 3, 4, 5))
         self._load_piano_sounds(row)
         self.typing_ctl.setVisible(row == 2)
         self.calib_btn.setText("Calibrate Keyboard (click 4 corners)" if row == 2 else "Calibrate")
@@ -338,8 +346,12 @@ class MainWindow(CameraLifecycle, QWidget):
             return True
         return super().eventFilter(obj, event)
 
+    def _release_pointers(self):
+        for g in (self.game, self.gomoku_game):
+            g.update(None, False)
+
     def _new_game(self):
-        self.game.new_game()
+        self.active_game.new_game()
         self.canvas.update()
 
     def _calibrate_projector(self):
@@ -360,7 +372,7 @@ class MainWindow(CameraLifecycle, QWidget):
         for chess, but the drawing pen position is useful to see)."""
         win = self.proj_win
         if win is not None:
-            win.game, win.projector, win.show_cursor = self.game if self.mode == 1 else None, self.projector_app, self.mode == 3
+            win.game, win.projector, win.show_cursor = self.active_game, self.projector_app, self.mode == 3
             win.update()
 
     def _on_mirror(self, on: bool):
@@ -382,7 +394,7 @@ class MainWindow(CameraLifecycle, QWidget):
     def _orientation_changed(self, what: str):
         self.state.end_stroke()
         self.typing.cancel_calibration()
-        self.game.update(None, False)  # a pointer jump from re-mapping must not move a held piece
+        self._release_pointers()  # a pointer jump from re-mapping must not move a held piece
         if self.calibrating:
             self._start_calibration()
         else:
@@ -469,13 +481,13 @@ class MainWindow(CameraLifecycle, QWidget):
         else:
             seen = (bool(self.typing.session.fingertips) if self.mode == 2 else
                     bool(self.piano.session.fingertips) if self.mode == 4 else
-                    self.game.pointer is not None if self.chess_mode else self.state.cursor is not None)
+                    self.active_game.pointer is not None if self.chess_mode else self.state.cursor is not None)
             status = "Hand detected" if seen else "No hand detected"
         self.status.setText(status)
         self.mapping_label.setText(mapping_text(self.mode, self.mapper, self.typing, self.projector_app))
         self.hint.setText(self.message)
         extra = (self.typing.stats_text(time.monotonic()) if self.mode == 2 else
-                 self.proj.stats_text() if self.chess_mode else self.piano.stats_text() if self.mode == 4 else "")
+                 self.projector_app.stats_text() if self.chess_mode else self.piano.stats_text() if self.mode == 4 else "")
         self.diag.setText(camera_text(self.camera, w, extra))
 
     def closeEvent(self, event):

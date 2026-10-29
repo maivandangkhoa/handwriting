@@ -21,7 +21,7 @@ from .touch_detector import ShadowTouchDetector
 log = logging.getLogger(__name__)
 HOLD_S = 1.4          # how long the fingertip must stay on / above the ring for a reference
 SETTLE_S = 0.5        # ...of which the first part is discarded while the finger gets there
-DWELL_S = 0.9         # point-and-hold: a fingertip kept still this long counts as a touch, shadow or not
+DWELL_S = 0.6         # point-and-hold: a fingertip kept still this long counts as a touch, shadow or not
 DWELL_RADIUS = 0.4    # ...still = within this many squares of where the hold began
 DWELL_TAP_S = 0.15    # how long the synthetic touch lasts
 MAX_REFERENCE_TRIES = 2   # shadow references that fail this often leave point-and-hold as the only touch

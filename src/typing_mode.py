@@ -11,6 +11,7 @@ from .calibration import CORNER_NAMES, CalibrationError, CoordinateMapper
 from .hand_slots import HandSlots
 from .hand_tracker import Detection
 from .keyboard_detect import Detection as KeyboardFound, detect_keyboard
+from .preview import PreviewLabel, preview_to_view  # noqa: F401  (PreviewLabel re-exported for ui.py)
 from .keyboard_layout import KEYS, LAYOUT_H, LAYOUT_W, base_char
 from .typing_session import FINGERTIPS, TypingSession
 
@@ -77,14 +78,6 @@ class DetectJob(QThread):
 
     def run(self) -> None:
         self.done.emit(detect_keyboard(self._frame))
-
-
-class PreviewLabel(QLabel):
-    """Camera preview that reports clicks (position in label coordinates)."""
-    clicked = Signal(float, float)
-
-    def mousePressEvent(self, event):
-        self.clicked.emit(event.position().x(), event.position().y())
 
 
 class TypingMode:
@@ -172,15 +165,10 @@ class TypingMode:
 
     def click(self, x: float, y: float, label: QLabel) -> None:
         """Handle a click at label coordinates (x, y) while calibrating."""
-        pm = label.pixmap()
-        if not self.calibrating or pm is None or pm.isNull():
+        point = preview_to_view(x, y, label, self.mapper.frame_size[0]) if self.calibrating else None
+        if point is None:
             return
-        scale = config.PREVIEW_WIDTH / self.mapper.frame_size[0]
-        px = x - (label.width() - pm.width()) / 2
-        py = y - (label.height() - pm.height()) / 2
-        if not (0 <= px < pm.width() and 0 <= py < pm.height()):
-            return
-        self.pending.append((px / scale, py / scale))
+        self.pending.append(point)
         if len(self.pending) < 4:
             self._prompt()
             return

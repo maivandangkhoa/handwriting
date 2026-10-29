@@ -85,3 +85,15 @@ def test_non_finite_point_treated_as_lost():
     assert s.update((math.nan, 1)) is None
     s.update((3, 3))
     assert len(s.strokes) == 2
+
+
+def test_each_stroke_keeps_the_colour_it_was_started_with():
+    s = DrawingState()
+    s.update((0, 0))
+    s.color = (255, 0, 0)
+    s.update((1, 0))                 # same stroke: keeps its colour
+    s.end_stroke()
+    s.update((5, 5))
+    assert s.colors == [(90, 230, 255), (255, 0, 0)] and len(s.strokes) == 2
+    s.clear()
+    assert s.colors == [] and s.strokes == []

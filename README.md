@@ -38,7 +38,8 @@ Requested 1280x720 @ 30 FPS; the actual values are read back and shown in Diagno
 ## Using it
 - **Draw mode** (remembered): *Pinch to draw* (default) draws only while thumb and index are pinched, with the
   pointer at their midpoint (green dot = pen down, red = pen up); *Always draw* follows the index tip and always
-  draws. This is the practical substitute for touch detection, which one ordinary camera cannot do.
+  draws; *Point to draw* follows the index tip and draws while the index finger is straight, lifting the pen when you curl
+  it (thresholds `POINT_ON_RATIO` / `POINT_OFF_RATIO` in `src/config.py`). This is the practical substitute for touch detection, which one ordinary camera cannot do.
 - **Draw Enabled** off = *Paused* (cursor still follows, nothing is drawn). **Clear Canvas** removes all strokes.
 - Losing the hand ends the stroke; when it returns a new stroke starts, so no long connecting line.
 - **Mirror Camera** (default off, remembered between runs): off = raw camera view, correct when the camera looks
@@ -52,17 +53,76 @@ Requested 1280x720 @ 30 FPS; the actual values are read back and shown in Diagno
 - Smoothing: One Euro filter (`ONE_EURO_MIN_CUTOFF` lower = steadier at rest, `ONE_EURO_BETA` higher = less lag
   while moving, both in `src/config.py`).
 
-## Chess application
-Choose **Chess (pinch to move pieces)** in the *Application* dropdown (default: Air Drawing). Both sides are
-played by you (hot-seat); rules and legality come from [`python-chess`](https://pypi.org/project/chess/).
-- Pointer = midpoint between thumb tip and index tip (green dot while pinching, red otherwise).
-- **Pinch** (bring thumb and index together) over a piece of the side to move to pick it up: the square turns blue
-  and legal destinations get green dots. **Open the fingers** over a square to drop it. Illegal drops, drops
-  outside the board, or dropping on the origin square return the piece.
-- Losing the hand cancels the move; you must open the fingers once before grabbing again.
-- Pawn promotion is automatic (queen). *New Game* resets. Calibrate the same way as for drawing (recommended:
-  the board is in the middle of the canvas, so the uncalibrated fallback already works roughly).
-- Pinch thresholds (`PINCH_ON_RATIO` / `PINCH_OFF_RATIO`) and board size are in `src/config.py`.
+## Chess on a projector (touch the pieces)
+Choose **Chess on projector (touch the pieces)**. The screen is a projector, the camera sees the projected board, your
+hand **and its shadow**. You touch a piece with the index finger, then touch the square it should go to (or touch a
+piece and slide to the square before lifting). Both sides are played by you; rules come from
+[`python-chess`](https://pypi.org/project/chess/).
+
+**How a touch is detected** (one RGB camera has no depth, so it uses the shadow): the projector lights the hand from
+one side, so a hovering fingertip casts a shadow displaced from it; as the finger lands the shadow slides under it.
+The app memorises the empty projected board, marks pixels clearly darker than it as shadow (dark squares and a global
+exposure change are not shadow), and scores the *visible shadow area around the index fingertip*. A touch is a low
+score **with shadow right next to the fingertip** (a hand held high has no shadow near the fingertip and never counts).
+Two reference scores that you record in calibration set the thresholds (`src/touch_detector.py`).
+
+Setup, once per session:
+1. *Open on projector screen* (pick the projector in the list; Esc closes it), or just move the main window
+   there. Make the preview upright with Mirror / Flip Vertical.
+2. *Start Camera*, then **Calibrate Projector (auto)** and keep your hands out of view:
+   the canvas goes black, four white discs appear **on the four corner squares of the board** (the camera only has to
+   see the board, not the whole canvas), and the two camera frames are differenced to find them
+   (fallback: if the discs are not found you click them on the preview). The empty board is then memorised
+   (hand away, about a second), then: **touch the ring** with your index fingertip and hold still 1.5 s, then
+   **lift the fingertip about 3 cm above the ring** and hold. If the shadow barely changes between the two, the app
+   says so instead of guessing.
+3. Play. Selection survives the hand leaving. Touching the selected piece again deselects it. After each move the
+   projected board changed, so touches pause until your hand has been away for ~0.4 s and the board is re-memorised.
+
+Why it can fail: the shadow must be visible to the camera (projector and camera must not be on the same line, and the
+hand must be lit from the side, not from directly behind the camera); the board is drawn small with a lit margin
+because a finger near the canvas edge casts its shadow where the projector casts no light; highlights are drawn
+brighter than the squares (outline and dots) so they can never pass for shadow. A strong ambient light or a
+very dark room both reduce the shadow contrast. Pawn promotion is automatic (queen). *New Game* resets.
+Thresholds and sizes are in `src/config.py` (`TOUCH_*`, `BACKGROUND_*`, `PROJECTOR_*`, `CHESS_SQUARE`).
+The pinch-to-move chess of the earlier version was replaced by this one; pinch drawing is still in Air Drawing.
+
+**Weak projector / hand hides its shadow.** The shadow is measured as the share of the *projected* light that has
+disappeared (the black calibration frame is the room light alone), so a projector that adds only a little to a bright
+wall still works. If the camera sees the shadow only behind the hand, **point-and-hold** works without any shadow:
+keep the fingertip on a square for about a second (a green arc fills) to select it, then hold on the destination.
+If the shadow references are rejected twice, the app goes on in point-and-hold only. Best fix for the shadow itself:
+put the camera to the side (30-45 degrees off the projector axis) so the shadow lands beside the finger.
+
+## Air Drawing on a projector (move your hand over the canvas)
+
+Choose *Air Drawing on projector* in the Application list. The canvas is shown on the projector as a black page
+with bright strokes (dark ink would just be the unlit wall) and the hand is tracked where it really is on the
+projection. Setup: *Open on projector screen*, *Start Camera*, then **Calibrate Projector (auto)** with your hands
+out of view: four white discs appear near the canvas corners (8-92 % of the canvas, so the camera needs most of
+the canvas, not the whole picture) and are found by differencing a black and a lit frame (fallback: click them on
+the preview). Then draw as in Air Drawing: pinch thumb and index finger over the projection (*Pinch to draw*) or
+choose *Always draw* or *Point to draw* (index out = draw, curled = lift); the dot at the pen position shows where the stroke will go. Strokes are kept in canvas
+coordinates, *Clear Canvas* wipes them. A frame in the current pen colour marks the page, and a **colour palette**
+runs down its left edge: rest the pen on a swatch for half a second (an arc fills) to pick that colour; while the pen is over the
+palette it does not draw. Each stroke keeps the colour it was started with. Code: `projector_surface.py` (shared geometry calibration),
+`projector_draw.py` (palette), `draw_view.py` (frame and palette painting).
+
+## Piano on a projector (tap the keys to play)
+
+Choose *Piano on projector* in the Application list. Two octaves (C4 to B5, 14 white and 10 black keys) are projected
+as a lit keyboard; struck keys light up and sound. Setup is the same as Air Drawing on a projector: *Open on projector
+screen*, *Start Camera*, **Calibrate Projector (auto)** with your hands out of view (four discs near the canvas corners,
+fallback: click them on the preview), then play. Sound is synthesised at first use (24 piano-like tones, additive
+harmonics with decay, played through Qt's `QSoundEffect`), so the Mac's volume applies.
+
+How a key is struck: one RGB camera has no depth, so (as in the typing app) a press is a fingertip that **travels a
+little onto a key and then pauses for about a tenth of a second**; fingers resting on the keys never sound, and every
+fingertip of up to two hands counts, so chords work. The orange dots show where the app thinks the fingertips are; the pale
+key is the one under a finger, the bright key was just struck. Black keys win over the white keys behind them. Tune with
+`PIANO_SENSITIVITY` (higher = smaller movements strike) and the `TYPING_*` press constants in `src/config.py`.
+Code: `piano_layout.py` (geometry), `piano_session.py` (fingertips to notes), `piano_sound.py`, `piano_view.py`,
+`piano_mode.py`.
 
 ## Keyboard typing application (experimental)
 Choose **Keyboard typing (camera reads keys)**. The camera looks at your keyboard from above; the app tries to infer
@@ -126,7 +186,7 @@ thresholds, and treat anything below ~90% as "not yet usable for typing".
 
 ## Layout
 `src/camera.py` capture thread · `hand_tracker.py` MediaPipe · `worker.py` tracking thread/preview ·
-`filters.py` One Euro smoothing · `calibration.py` mapping · `gesture.py` pinch · `keyboard_layout.py` / `keyboard_detect.py` / `press_detector.py` / `typing_session.py` / `typing_eval.py` / `typing_mode.py` / `typing_view.py` keyboard app · `chess_game.py` chess interaction · `canvas.py` rendering · `drawing.py` strokes · `metrics.py` FPS/timing · `ui.py` window · `config.py` constants.
+`filters.py` One Euro smoothing · `calibration.py` mapping · `gesture.py` pinch · `keyboard_layout.py` / `keyboard_detect.py` / `press_detector.py` / `typing_session.py` / `typing_eval.py` / `typing_mode.py` / `typing_view.py` keyboard app · `chess_game.py` chess by touch · `touch_detector.py` shadow touch · `projector_calib.py` / `projector_surface.py` / `projector_chess.py` / `projector_draw.py` / `piano_*.py` / `projector_window.py` projector apps · `ui_camera.py` camera start/stop · `diagnostics.py` panel text · `preview.py` clickable preview · `canvas.py` rendering · `drawing.py` strokes · `metrics.py` FPS/timing · `ui.py` window · `config.py` constants.
 
 ## Known limitations
 Air-drawing has no contact detection; depth/perspective makes the canvas area depend on hand distance.

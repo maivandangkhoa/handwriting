@@ -3,6 +3,8 @@ import math
 from typing import Protocol
 
 Point = tuple[float, float]
+Color = tuple[int, int, int]
+DEFAULT_COLOR: Color = (90, 230, 255)
 
 
 class Smoother(Protocol):
@@ -14,6 +16,8 @@ class DrawingState:
     def __init__(self, smoother: Smoother | None = None):
         self._smoother = smoother  # None = no smoothing
         self.strokes: list[list[Point]] = []   # finished and in-progress strokes, canvas coordinates
+        self.colors: list[Color] = []          # colour of each stroke (used where the canvas is lit ink on black)
+        self.color: Color = DEFAULT_COLOR      # colour of the next stroke
         self.cursor: Point | None = None       # smoothed fingertip position, None when tracking is lost
         self._draw_enabled = True
         self._stroke_open = False
@@ -32,6 +36,7 @@ class DrawingState:
 
     def clear(self) -> None:
         self.strokes.clear()
+        self.colors.clear()
         self._stroke_open = False
 
     def update(self, point: Point | None, pen_down: bool = True) -> Point | None:
@@ -51,6 +56,7 @@ class DrawingState:
         elif self._draw_enabled:
             if not self._stroke_open:
                 self.strokes.append([])
+                self.colors.append(self.color)
                 self._stroke_open = True
             self.strokes[-1].append(self.cursor)
         return self.cursor

@@ -32,6 +32,7 @@ class Detection:
     inference_ms: float               # time spent in detect_for_video only (not end-to-end latency)
     hands: list = field(default_factory=list)        # every detected hand, each (21, 2) raw-frame pixels
     handedness: list = field(default_factory=list)   # "Left"/"Right" per hand (MediaPipe's label)
+    frame: np.ndarray | None = None                  # the BGR frame this detection came from
 
     @property
     def tip_px(self) -> tuple[float, float] | None:
@@ -74,10 +75,10 @@ class HandTracker:
         result = self._landmarker.detect_for_video(image, ts)
         ms = (time.perf_counter() - start) * 1000.0
         if not result.hand_landmarks:
-            return Detection(None, 0, ms)
+            return Detection(None, 0, ms, frame=frame_bgr)
         hands = [np.array([[lm.x * w, lm.y * h] for lm in hand], dtype=np.float32) for hand in result.hand_landmarks]
         labels = [(cats[0].category_name if cats else "") for cats in result.handedness]
-        return Detection(hands[0], len(hands), ms, hands, labels)
+        return Detection(hands[0], len(hands), ms, hands, labels, frame_bgr)
 
     def close(self) -> None:
         self._landmarker.close()

@@ -12,16 +12,24 @@ from . import config
 from .canvas import CANVAS_SIZE, CanvasWidget
 from .chess_game import ChessGame
 from .calibration import CORNER_NAMES, CalibrationError, CoordinateMapper
-from .camera import Camera, list_cameras
+from .camera import Camera
+from .diagnostics import camera_text, mapping_text
 from .drawing import DrawingState
 from .filters import OneEuroFilter2D
-from .gesture import PinchDetector, pinch_point
-from .typing_mode import PreviewLabel, TypingControls, TypingMode, real_char
+from .gesture import PinchDetector, PointDetector, pinch_point
+from .preview import PreviewLabel
+from .piano_mode import ProjectorPiano
+from .piano_sound import QtPlayer
+from .projector_chess import ProjectorChess
+from .projector_draw import ProjectorDraw
+from .projector_window import ProjectorControls, ProjectorWindow
+from .typing_mode import TypingControls, TypingMode, real_char
+from .ui_camera import CameraLifecycle
 from .worker import CameraOpener, TrackingWorker
 
 log = logging.getLogger(__name__)
 
-class MainWindow(QWidget):
+class MainWindow(CameraLifecycle, QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("FingerTrace PoC — air-drawing (not touchscreen)")
@@ -30,16 +38,26 @@ class MainWindow(QWidget):
         self.worker: TrackingWorker | None = None
         self.state = DrawingState(OneEuroFilter2D())
         self.game = ChessGame()
-        self.mode = 0   # 0 = Air Drawing, 1 = Chess, 2 = Keyboard typing
+        self.mode = 0   # 0 = Air Drawing, 1 = Chess on projector, 2 = Keyboard typing, 3 = Air Drawing on projector, 4 = Piano on projector
         self.pinch = PinchDetector()
-        self.pointer_smoother = OneEuroFilter2D()
+        self.point = PointDetector()
         self.settings = QSettings("FingerTrace", "FingerTrace")
         mirror = self.settings.value("mirror", config.DEFAULT_MIRROR, type=bool)
         flip_v = self.settings.value("flip_vertical", config.DEFAULT_FLIP_VERTICAL, type=bool)
-        self.pinch_to_draw = self.settings.value("pinch_to_draw", True, type=bool)
+        legacy = 0 if self.settings.value("pinch_to_draw", True, type=bool) else 1     # the earlier two-way setting
+        self.draw_style = self.settings.value("draw_style", legacy, type=int)   # 0 pinch, 1 always, 2 index out = draw
         self.mapper = CoordinateMapper((config.CAMERA_REQUEST_WIDTH, config.CAMERA_REQUEST_HEIGHT), CANVAS_SIZE,
                                        mirror=mirror, flip_vertical=flip_v)
         self.typing = TypingMode(self.mapper.frame_size, mirror, flip_v)
+        self.proj = ProjectorChess(self.game, self.mapper.frame_size, CANVAS_SIZE, mirror, flip_v)
+        self.draw_proj = ProjectorDraw(self.state, self.mapper.frame_size, CANVAS_SIZE, mirror, flip_v)
+        self.piano = ProjectorPiano(self.mapper.frame_size, CANVAS_SIZE, mirror, flip_v)
+        self.mappers = [self.mapper, self.typing.mapper, self.proj.mapper, self.draw_proj.mapper, self.piano.mapper]   # all follow the camera size / orientation
+        self.proj_ctl = ProjectorControls()
+        self.proj_ctl.calibrate_clicked.connect(self._calibrate_projector)
+        self.proj_ctl.open_clicked.connect(self._open_projector)
+        self.proj_ctl.setVisible(False)
+        self.proj_win: ProjectorWindow | None = None
         sensitivity = self.settings.value("typing_sensitivity", config.TYPING_SENSITIVITY, type=int)
         self.typing.session.set_sensitivity(sensitivity)
         self.typing.auto_detect = self.settings.value("auto_detect_keyboard", True, type=bool)
@@ -66,6 +84,11 @@ class MainWindow(QWidget):
     def chess_mode(self) -> bool:
         return self.mode == 1
 
+    @property
+    def projector_app(self):
+        """The projector app of the current mode (chess or drawing), else None."""
+        return {1: self.proj, 3: self.draw_proj, 4: self.piano}.get(self.mode)
+
     # ---- layout -------------------------------------------------------------------------
     def _build_ui(self):
         self.canvas = CanvasWidget(self.state)
@@ -83,7 +106,9 @@ class MainWindow(QWidget):
         self.diag.setStyleSheet("font-family: Menlo, monospace;")
 
         self.app_box = QComboBox()
-        self.app_box.addItems(["Air Drawing", "Chess (pinch to move pieces)", "Keyboard typing (camera reads keys)"])
+        self.app_box.addItems(["Air Drawing", "Chess on projector (touch the pieces)", "Keyboard typing (camera reads keys)",
+                                "Air Drawing on projector (move your hand over the canvas)",
+                                "Piano on projector (tap the keys to play)"])
         self.app_box.activated.connect(self._on_app_selected)
         self.camera_box = QComboBox()
         self.camera_box.activated.connect(self._on_camera_selected)  # user-driven only, not programmatic changes
@@ -92,8 +117,8 @@ class MainWindow(QWidget):
         self.start_btn = QPushButton("Start Camera")
         self.start_btn.clicked.connect(self._toggle_camera)
         self.draw_mode_box = QComboBox()
-        self.draw_mode_box.addItems(["Pinch to draw", "Always draw"])
-        self.draw_mode_box.setCurrentIndex(0 if self.pinch_to_draw else 1)
+        self.draw_mode_box.addItems(["Pinch to draw", "Always draw", "Point to draw (index out = draw, curled = lift)"])
+        self.draw_mode_box.setCurrentIndex(self.draw_style)
         self.draw_mode_box.activated.connect(self._on_draw_mode)
         self.draw_chk = QCheckBox("Draw Enabled")
         self.draw_chk.setChecked(True)
@@ -132,7 +157,7 @@ class MainWindow(QWidget):
             side.addWidget(w)
         side.addLayout(cam_row)
         for w in (self.start_btn, self.draw_mode_box, self.draw_chk, self.mirror_chk, self.flip_chk, clear, self.new_game_btn, self.calib_btn,
-                  self.confirm_btn, reset, self.typing_ctl, self.mapping_label, self.hint, self.diag):
+                  self.confirm_btn, reset, self.typing_ctl, self.proj_ctl, self.mapping_label, self.hint, self.diag):
             side.addWidget(w)
         side.addStretch(1)
         panel = QWidget()
@@ -143,88 +168,19 @@ class MainWindow(QWidget):
         root.addWidget(panel)
 
     # ---- camera -------------------------------------------------------------------------
-    def _refresh_cameras(self):
-        if self.worker is not None or self.opener is not None:
-            self.message = "Stop the camera before refreshing the camera list."
-            return
-        current = self.camera_box.currentData()
-        self.camera_box.clear()
-        found = list_cameras()
-        for i, w, h in found:
-            self.camera_box.addItem(f"Camera {i} ({w}x{h})", i)
-        if current is not None:
-            row = self.camera_box.findData(current)
-            self.camera_box.setCurrentIndex(max(row, 0))
-        if found:
-            self.camera_unavailable = False
-            self.message = f"Found {len(found)} camera(s)."
-        else:
-            self.camera_unavailable = True
-            self.message = "No camera found. Check the USB cable/port, then press Refresh."
-
-    def _on_camera_selected(self, _row: int):
-        """Switch to the newly selected camera immediately if one is already running."""
-        if self.worker is not None and self.opener is None:
-            self._stop_worker()  # the opener closes the old camera in the background
-            self._start_camera()
-
-    def _toggle_camera(self):
-        if self.opener is not None:
-            return
-        if self.worker is not None:
-            self._stop_camera()
-        else:
-            self._start_camera()
-
-    def _start_camera(self):
-        index = self.camera_box.currentData()
-        if index is None:
-            self.message = "No camera selected. Connect the USB camera and press Refresh."
-            return
-        self.camera_unavailable = False
-        self.message = f"Opening camera {index}…"
-        self._set_busy(True)
-        self.preview.setPixmap(QPixmap())
-        self.preview.setText("Opening camera…")
-        self.opener = CameraOpener(self.camera, index)
-        self.opener.opened.connect(self._on_opened)
-        self.opener.failed.connect(self._on_open_failed)
-        self.opener.start()
-
-    def _set_busy(self, busy: bool):
-        self.start_btn.setEnabled(not busy)
-        self.camera_box.setEnabled(not busy)
-        self.status.setText("Opening camera…" if busy else self.status.text())
-
-    def _finish_open(self):
-        self.opener.wait()
-        self.opener = None
-        self._set_busy(False)
-
-    def _on_open_failed(self, msg: str):
-        log.error("%s", msg)
-        self._finish_open()
-        self.camera_unavailable = True
-        self.message = msg
-        self.start_btn.setText("Start Camera")
-
     def _on_opened(self, info):
         self._finish_open()
-        self.mapper.set_frame_size((info.width, info.height))
-        self.typing.mapper.set_frame_size((info.width, info.height))
+        for m in self.mappers:
+            m.set_frame_size((info.width, info.height))
         self.worker = TrackingWorker(self.camera)
         self.worker.mirror = self.mirror_chk.isChecked()
         self.worker.flip_vertical = self.flip_chk.isChecked()
-        self.worker.num_hands = config.TYPING_NUM_HANDS if self.mode == 2 else config.NUM_HANDS
+        self.worker.num_hands = config.TYPING_NUM_HANDS if self.mode in (2, 4) else config.NUM_HANDS
         self.worker.result.connect(self._on_result)
         self.worker.failed.connect(self._on_failed)
         self.worker.start()
         self.start_btn.setText("Stop Camera")
         self.message = ""
-
-    def _stop_camera(self):
-        self._stop_worker()
-        self.camera.close()
 
     def _stop_worker(self):
         if self.worker is not None:
@@ -234,9 +190,11 @@ class MainWindow(QWidget):
         self.game.update(None, False)
         self.typing.session.update({}, time.monotonic())
         self.typing.cancel_calibration()
-        self.pointer_smoother.reset()
         self.canvas.pinching = False
         self.last_tip_raw = None
+        self.proj.camera_stopped()
+        self.draw_proj.camera_stopped()
+        self.piano.camera_stopped()
         self._cancel_calibration()
         self.start_btn.setText("Start Camera")
         self.preview.setPixmap(QPixmap())
@@ -254,6 +212,8 @@ class MainWindow(QWidget):
         pixmap = QPixmap.fromImage(image)
         if self.mode == 2:
             self.typing.overlay(pixmap)
+        elif self.projector_app is not None:
+            self.projector_app.overlay(pixmap)
         self.preview.setPixmap(pixmap)
         raw = det.tip_px
         self.last_tip_raw = raw
@@ -261,7 +221,16 @@ class MainWindow(QWidget):
             self.typing.maybe_auto_calibrate(self.camera.latest, time.monotonic())
             self.typing.on_detection(det, time.monotonic())
         elif self.chess_mode:
-            self._update_chess(det)
+            self.proj.on_detection(det, time.monotonic())
+        elif self.mode == 4:
+            self.piano.on_detection(det, time.monotonic())
+        elif self.mode == 3:
+            self.draw_proj.on_detection(det, time.monotonic())
+            if self.draw_proj.drawing:
+                self._update_drawing(det, self.draw_proj)
+            else:
+                self.state.update(None)
+                self.canvas.pinching = False
         elif self.calibrating:
             self.state.update(None)
             self.canvas.pinching = False
@@ -269,33 +238,31 @@ class MainWindow(QWidget):
             self._update_drawing(det)
         self.canvas.update()
 
-    def _update_drawing(self, det):
-        """Pinch mode: pointer = thumb/index midpoint, pen down only while pinched. Always mode: index tip."""
+    def _update_drawing(self, det, surface=None):
+        """Pinch mode: pointer = thumb/index midpoint, pen down only while pinched. Always mode: index tip, pen always
+        down. Point mode: index tip, pen down while the index finger is straight, lifted when it is curled.
+        On a projector `surface` supplies the mapping and the colour palette, which the pen must not draw on."""
+        mapper = self.mapper if surface is None else surface.mapper
         pinching = self.pinch.update(det.landmarks_px)
+        pointing = self.point.update(det.landmarks_px)
         if det.landmarks_px is None:
             self.state.update(None)
             self.canvas.pinching = False
+            if surface is not None:
+                surface.on_palette(None, time.monotonic())
             return
-        raw = pinch_point(det.landmarks_px) if self.pinch_to_draw else det.tip_px
-        self.state.update(self.mapper.map(raw), pen_down=pinching or not self.pinch_to_draw)
-        self.canvas.pinching = self.pinch_to_draw and pinching
+        raw = pinch_point(det.landmarks_px) if self.draw_style == 0 else det.tip_px
+        point = mapper.map(raw)
+        pen_down = (pinching, True, pointing)[self.draw_style]
+        if surface is not None and surface.on_palette(point, time.monotonic()):
+            pen_down = False
+        self.state.update(point, pen_down=pen_down)
+        self.canvas.pinching = self.draw_style != 1 and pen_down      # the cursor turns green while the pen is down
 
     def _on_draw_mode(self, row: int):
-        self.pinch_to_draw = row == 0
-        self.settings.setValue("pinch_to_draw", self.pinch_to_draw)
+        self.draw_style = row
+        self.settings.setValue("draw_style", row)
         self.state.end_stroke()
-
-    def _update_chess(self, det):
-        """Pointer = midpoint of thumb and index tips; pinching grabs, opening the fingers drops."""
-        pinching = self.pinch.update(det.landmarks_px)
-        pointer = None
-        if det.landmarks_px is not None and not self.calibrating:
-            mapped = self.mapper.map(pinch_point(det.landmarks_px))
-            pointer = self.pointer_smoother.update(mapped) if mapped is not None else None
-        if pointer is None:
-            self.pointer_smoother.reset()
-        self.game.update(pointer, pinching and pointer is not None)
-        self.canvas.pinching = pinching and pointer is not None
 
     # ---- application selection ----------------------------------------------------------
     def _on_app_selected(self, row: int):
@@ -307,23 +274,36 @@ class MainWindow(QWidget):
         self.state.update(None)
         self.game.update(None, False)
         self.typing.session.update({}, time.monotonic())
-        self.pointer_smoother.reset()
         self.canvas.pinching = False
+        self.canvas.projector = self.projector_app
+        self._bind_projector_window()
         if self.worker is not None:
-            self.worker.num_hands = config.TYPING_NUM_HANDS if row == 2 else config.NUM_HANDS
+            self.worker.num_hands = config.TYPING_NUM_HANDS if row in (2, 4) else config.NUM_HANDS
         for sc in self.shortcuts:
             sc.setEnabled(row != 2)
-        self.draw_mode_box.setVisible(row == 0)
-        self.draw_chk.setVisible(row == 0)
-        self.clear_btn.setVisible(row != 1)
+        self.draw_mode_box.setVisible(row in (0, 3))
+        self.draw_chk.setVisible(row in (0, 3))
+        self.clear_btn.setVisible(row not in (1, 4))
         self.clear_btn.setText("Clear Canvas" if row == 0 else "Clear Text")
         self.new_game_btn.setVisible(row == 1)
-        self.confirm_btn.setVisible(row != 2)
+        self.confirm_btn.setVisible(row == 0)
+        self.calib_btn.setVisible(row in (0, 2))
+        self.proj_ctl.setVisible(row in (1, 3, 4))
+        self._load_piano_sounds(row)
         self.typing_ctl.setVisible(row == 2)
         self.calib_btn.setText("Calibrate Keyboard (click 4 corners)" if row == 2 else "Calibrate")
         self.message = ("Make the preview upright (Mirror / Flip Vertical), then Calibrate Keyboard."
                         if row == 2 else "")
         self.canvas.update()
+
+    def _load_piano_sounds(self, row: int):
+        """The 24 tones are synthesised on first use of the piano, not at start-up."""
+        if row == 4 and self.piano.player is None:
+            try:
+                self.piano.player = QtPlayer()
+            except Exception as exc:   # no audio support: the piano still shows, silently
+                log.error("Piano sound unavailable: %s", exc)
+                self.piano.message = f"Piano sound unavailable ({exc}); the keys will light up but stay silent."
 
     def _on_auto_detect(self, on: bool):
         self.settings.setValue("auto_detect_keyboard", on)
@@ -345,6 +325,8 @@ class MainWindow(QWidget):
             self.typing.click(x, y, self.preview)
             self.message = self.typing.message
             self.canvas.update()
+        elif self.projector_app is not None:
+            self.projector_app.click(x, y, self.preview)
 
     def eventFilter(self, obj, event):
         """In typing mode, record real keystrokes as ground truth and keep them away from the buttons/combos."""
@@ -360,18 +342,39 @@ class MainWindow(QWidget):
         self.game.new_game()
         self.canvas.update()
 
+    def _calibrate_projector(self):
+        if self.worker is None:
+            self.message = "Start the camera before calibrating."
+            return
+        self.projector_app.start_calibration()
+
+    def _open_projector(self, index: int):
+        screens = QApplication.screens()
+        if self.proj_win is None:
+            self.proj_win = ProjectorWindow(self.state, self.canvas)
+            self._bind_projector_window()
+        self.proj_win.show_on(screens[min(index, len(screens) - 1)])
+
+    def _bind_projector_window(self):
+        """The projector window shows what the current app shows; only the cursor differs (the finger is the cursor
+        for chess, but the drawing pen position is useful to see)."""
+        win = self.proj_win
+        if win is not None:
+            win.game, win.projector, win.show_cursor = self.game if self.mode == 1 else None, self.projector_app, self.mode == 3
+            win.update()
+
     def _on_mirror(self, on: bool):
         self.settings.setValue("mirror", on)
-        self.mapper.set_mirror(on)  # also invalidates calibration (stored in view coordinates)
-        self.typing.mapper.set_mirror(on)
+        for m in self.mappers:
+            m.set_mirror(on)  # also invalidates calibration (stored in view coordinates)
         if self.worker is not None:
             self.worker.mirror = on
         self._orientation_changed("Mirror")
 
     def _on_flip_vertical(self, on: bool):
         self.settings.setValue("flip_vertical", on)
-        self.mapper.set_flip_vertical(on)
-        self.typing.mapper.set_flip_vertical(on)
+        for m in self.mappers:
+            m.set_flip_vertical(on)
         if self.worker is not None:
             self.worker.flip_vertical = on
         self._orientation_changed("Vertical flip")
@@ -440,8 +443,8 @@ class MainWindow(QWidget):
         self.canvas.update()
 
     def _reset_calibration(self):
-        self.mapper.reset()
-        self.typing.mapper.reset()
+        for m in self.mappers:
+            m.reset()
         self.typing.cancel_calibration()
         self._end_calibration()
         self.message = "Calibration reset: using linear fallback mapping."
@@ -451,6 +454,8 @@ class MainWindow(QWidget):
         w = self.worker
         if self.mode == 2 and self.typing.message != self._shown_typing_message:
             self._shown_typing_message = self.message = self.typing.message   # set by the background detection
+        elif self.projector_app is not None:
+            self.message = self.projector_app.message
         if self.camera.error and w is not None:
             self._stop_camera()
             self.camera_unavailable = True
@@ -459,38 +464,25 @@ class MainWindow(QWidget):
             status = "Opening camera…"
         elif w is None:
             status = "Camera unavailable" if self.camera_unavailable else "Camera stopped"
-        elif self.mode == 0 and not self.state.draw_enabled:
+        elif self.mode in (0, 3) and not self.state.draw_enabled:
             status = "Paused"
         else:
             seen = (bool(self.typing.session.fingertips) if self.mode == 2 else
+                    bool(self.piano.session.fingertips) if self.mode == 4 else
                     self.game.pointer is not None if self.chess_mode else self.state.cursor is not None)
             status = "Hand detected" if seen else "No hand detected"
         self.status.setText(status)
-        if self.mode == 2:
-            self.mapping_label.setText("Keyboard mapping: calibrated (homography)" if self.typing.mapper.calibrated
-                                       else "Keyboard mapping: NOT calibrated — typing disabled")
-        elif self.mapper.calibrated:
-            self.mapping_label.setText("Mapping: calibrated (homography)")
-        else:
-            self.mapping_label.setText("Mapping: UNCALIBRATED — linear fallback over full camera frame")
+        self.mapping_label.setText(mapping_text(self.mode, self.mapper, self.typing, self.projector_app))
         self.hint.setText(self.message)
-        info = self.camera.info if w is not None else None
-        if w is None or info is None:
-            self.diag.setText("camera FPS : -\ntracking FPS: -\ninference   : -\nresolution  : -\nhands       : -")
-            return
-        self.diag.setText(
-            f"camera FPS   : {self.camera.fps.rate():5.1f}\n"
-            f"tracking FPS : {w.fps.rate():5.1f}\n"
-            f"inference ms : {w.inference_ms.average():5.1f} (model call only, not end-to-end)\n"
-            f"resolution   : {info.width}x{info.height} (driver FPS {info.fps:.0f})\n"
-            f"hands        : {w.last_hand_count}\n"
-            f"dropped      : {w.dropped} camera frames skipped"
-            + (f"\n{self.typing.stats_text(time.monotonic())}" if self.mode == 2 else "")
-        )
+        extra = (self.typing.stats_text(time.monotonic()) if self.mode == 2 else
+                 self.proj.stats_text() if self.chess_mode else self.piano.stats_text() if self.mode == 4 else "")
+        self.diag.setText(camera_text(self.camera, w, extra))
 
     def closeEvent(self, event):
         if self.opener is not None:
             self.opener.wait()
         self.typing.wait_for_job()
+        if self.proj_win is not None:
+            self.proj_win.close()
         self._stop_camera()
         super().closeEvent(event)

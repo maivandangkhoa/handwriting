@@ -101,11 +101,12 @@ class CoordinateMapper:
         self._homography = None
         self._inverse = None
 
-    def calibrate(self, view_points: list[Point]) -> None:
+    def calibrate(self, view_points: list[Point], canvas_points: list[Point] | None = None) -> None:
+        """Map the 4 view points to the canvas corners, or to `canvas_points` (TL, TR, BR, BL) when given."""
         validate_points(view_points, self.frame_size)
         cw, ch = self.canvas_size
         src = np.array(view_points, dtype=np.float32)
-        dst = np.array([(0, 0), (cw, 0), (cw, ch), (0, ch)], dtype=np.float32)
+        dst = np.array(canvas_points or [(0, 0), (cw, 0), (cw, ch), (0, ch)], dtype=np.float32)
         matrix = cv2.getPerspectiveTransform(src, dst)
         if not np.all(np.isfinite(matrix)):
             raise CalibrationError("Could not compute a valid transform from these points.")

@@ -48,9 +48,13 @@ METRICS_WINDOW_SECONDS = 2.0
 # Pinch gesture (thumb tip <-> index tip distance divided by palm length, with hysteresis)
 PINCH_ON_RATIO = 0.30
 PINCH_OFF_RATIO = 0.50
+# Index finger extension = wrist-to-fingertip / wrist-to-index-knuckle: about 2 when straight, under 1 when curled.
+POINT_ON_RATIO = 1.75    # straight enough to start drawing
+POINT_OFF_RATIO = 1.50   # curled this far lifts the pen (early, so the fingertip's inward swing leaves no tail)
 
-# Chess board in logical canvas coordinates
-CHESS_SQUARE = 88
+# Chess board in logical canvas coordinates. The board leaves a lit margin: a finger near the edge casts its shadow
+# there, and the projector casts none outside the canvas.
+CHESS_SQUARE = 76
 CHESS_ORIGIN = ((CANVAS_WIDTH - 8 * CHESS_SQUARE) // 2, (CANVAS_HEIGHT - 8 * CHESS_SQUARE) // 2)
 
 # Keyboard typing mode. Speeds are in key units per second (1 unit = one standard key width, ~19 mm).
@@ -62,9 +66,28 @@ TYPING_ARM_DIST = 0.35             # a fingertip leaving its resting spot by thi
 TYPING_STILL_RADIUS = 0.22         # ...and staying within this radius ...
 TYPING_DWELL_S = 0.12              # ...for this long = a key press
 TYPING_SENSITIVITY = 7             # 1..10 slider; 5 = the distances above, higher = smaller movements count
+PIANO_SENSITIVITY = 7              # 1..10, as TYPING_SENSITIVITY: higher = smaller finger movements strike a key
 TYPING_EVAL_WINDOW_S = 0.6         # a predicted key within this of a real keystroke counts as its match
 
 # Automatic keyboard detection (chamfer matching of the key outlines against the layout)
 KEYBOARD_DETECT_WIDTH = 640        # frames are downscaled to this width for detection
 KEYBOARD_DETECT_MAX_COST = 1.2     # mean distance (px at that width) from layout key edges to image edges; above = reject
 KEYBOARD_DETECT_RETRY_S = 2.0      # while typing mode is uncalibrated, retry this often
+
+# Projector chess: a touch = the fingertip meets its own shadow on the projected surface.
+TOUCH_WORK_WIDTH = 640             # frames are downscaled to this width for shadow analysis
+TOUCH_SHADOW_RATIO = 0.72          # a pixel below this fraction of its empty-scene brightness is shadow
+TOUCH_MIN_BACKGROUND = 25          # pixels darker than this in the empty scene cannot show a shadow
+TOUCH_MIN_PROJECTED = 10           # with the room light known: the projector must add this much (0..255) for a shadow to show
+TOUCH_SHADOW_FRACTION = 0.4        # ...and shadow is where this share of the projected light has gone
+TOUCH_NEAR_MAX = 0.32              # a touch also needs visible shadow this close to the fingertip (palm lengths); farther = hovering high
+TOUCH_DISC_RADIUS = 0.7            # shadow is counted within this distance of the fingertip (palm lengths)
+TOUCH_HAND_MARGIN = 0.10           # the hand silhouette is the landmark hull grown by this (palm lengths)
+TOUCH_ON_FRACTION = 0.35           # touch starts when the visible-shadow score is this far from "touching" toward "hovering" ...
+TOUCH_OFF_FRACTION = 0.60          # ... and ends at this far
+TOUCH_MIN_CONTRAST = 0.04          # hover score must exceed touch score by this (palm^2), else the shadow is unusable
+TOUCH_CONFIRM_FRAMES = 2           # frames the touch condition must hold before it counts
+BACKGROUND_EMPTY_S = 0.4           # no hand for this long before the empty scene is (re)learned
+BACKGROUND_FRAMES = 8              # frames averaged into the empty-scene model
+PROJECTOR_MARKER_SCALE = 0.32      # calibration disc radius, in board squares (discs sit on the four corner squares)
+PROJECTOR_PHASE_S = 0.8            # how long each calibration pattern is shown before the frame is captured

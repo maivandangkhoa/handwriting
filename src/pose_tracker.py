@@ -28,7 +28,7 @@ class PoseTracker:
         try:
             options = vision.PoseLandmarkerOptions(
                 base_options=BaseOptions(model_asset_path=str(model_path)),
-                running_mode=vision.RunningMode.VIDEO, num_poses=1,
+                running_mode=vision.RunningMode.VIDEO, num_poses=config.DANCE_MAX_PEOPLE,
                 min_pose_detection_confidence=config.POSE_MIN_CONFIDENCE,
                 min_pose_presence_confidence=config.POSE_MIN_CONFIDENCE, min_tracking_confidence=config.POSE_MIN_CONFIDENCE)
             self._landmarker = vision.PoseLandmarker.create_from_options(options)
@@ -38,7 +38,7 @@ class PoseTracker:
         self._last_ts_ms = -1
 
     def detect(self, frame_bgr: np.ndarray) -> Detection:
-        """`Detection.pose` is (33, 3): x, y as fractions of the frame, and MediaPipe's visibility (0..1)."""
+        """Each body is (33, 3): x, y as fractions of the frame, and MediaPipe's visibility (0..1). `pose` is the first."""
         rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
         ts = max(int(time.monotonic() * 1000), self._last_ts_ms + 1)
@@ -46,10 +46,9 @@ class PoseTracker:
         start = time.perf_counter()
         result = self._landmarker.detect_for_video(image, ts)
         ms = (time.perf_counter() - start) * 1000.0
-        pose = None
-        if result.pose_landmarks:
-            pose = np.array([[lm.x, lm.y, lm.visibility] for lm in result.pose_landmarks[0]], dtype=np.float32)
-        return Detection(None, 0, ms, frame=frame_bgr, pose=pose)
+        poses = [np.array([[lm.x, lm.y, lm.visibility] for lm in body], dtype=np.float32)
+                 for body in result.pose_landmarks]
+        return Detection(None, 0, ms, frame=frame_bgr, pose=poses[0] if poses else None, poses=poses)
 
     def close(self) -> None:
         self._landmarker.close()

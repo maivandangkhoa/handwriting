@@ -27,8 +27,8 @@ def render_preview(frame: np.ndarray, det: Detection, mirror: bool, flip_vertica
         for p in pts:
             cv2.circle(img, tuple(p), 3, (0, 200, 255), -1)
         cv2.circle(img, tuple(pts[INDEX_FINGER_TIP]), 9, (0, 0, 255), 2)
-    if det.pose is not None:
-        pts = (det.pose[:, :2] * (img.shape[1], img.shape[0])).astype(int)
+    for body in det.poses or ([det.pose] if det.pose is not None else []):
+        pts = (body[:, :2] * (img.shape[1], img.shape[0])).astype(int)
         for a, b in POSE_CONNECTIONS:
             cv2.line(img, tuple(pts[a]), tuple(pts[b]), (0, 255, 0), 2)
         for i in (0, 15, 16, 27, 28):

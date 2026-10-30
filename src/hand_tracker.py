@@ -33,7 +33,8 @@ class Detection:
     hands: list = field(default_factory=list)        # every detected hand, each (21, 2) raw-frame pixels
     handedness: list = field(default_factory=list)   # "Left"/"Right" per hand (MediaPipe's label)
     frame: np.ndarray | None = None                  # the BGR frame this detection came from
-    pose: np.ndarray | None = None                   # (33, 3) body landmarks as frame fractions + visibility (Mirror dance)
+    pose: np.ndarray | None = None                   # (33, 3) body landmarks as frame fractions + visibility (Mirror dance): the first body
+    poses: list = field(default_factory=list)        # every detected body, each (33, 3) (up to config.DANCE_MAX_PEOPLE)
 
     @property
     def tip_px(self) -> tuple[float, float] | None:

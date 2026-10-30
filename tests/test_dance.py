@@ -28,24 +28,24 @@ def pose(**moves) -> np.ndarray:
 
 
 def feed(app, p, now):
-    app.on_detection(Detection(None, 0, 1.0, pose=p), now)
+    app.on_detection(Detection(None, 0, 1.0, pose=p, poses=[p]), now)
 
 
 def test_the_character_mirrors_the_person():
     app = make()
     feed(app, pose(w16=(0.8, 0.5)), 1.0)      # the person's right wrist, far right in the camera image
     assert app.visible
-    assert app.joints["r_wrist"][0] < 640      # shows on the left of the canvas, like a mirror
+    assert app.dancers[0].joints["r_wrist"][0] < 640      # shows on the left of the canvas, like a mirror
 
 
 def test_a_joint_that_is_not_visible_keeps_its_last_position():
     app = make()
     feed(app, pose(), 1.0)
-    before = app.joints["l_wrist"]
+    before = app.dancers[0].joints["l_wrist"]
     p = pose(w15=(0.1, 0.1))
     p[L_WRIST, 2] = 0.1
     feed(app, p, 1.1)
-    assert app.joints["l_wrist"] == before
+    assert app.dancers[0].joints["l_wrist"] == before
 
 
 def test_raising_both_hands_for_a_second_changes_the_character_once():
@@ -53,16 +53,16 @@ def test_raising_both_hands_for_a_second_changes_the_character_once():
     up = pose(w15=(0.4, 0.05), w16=(0.6, 0.05))
     for i in range(40):
         feed(app, up, 1.0 + i * 0.05)
-    assert app.character == 1
+    assert app.dancers[0].character == 1
     feed(app, pose(), 4.0)
-    assert app.progress == 0.0 and app.character == 1
+    assert app.dancers[0].progress == 0.0 and app.dancers[0].character == 1
 
 
 def test_the_character_leaves_when_nobody_is_seen():
     app = make()
     feed(app, pose(), 1.0)
     app.on_detection(Detection(None, 0, 1.0), 3.0)
-    assert not app.visible and not app.joints
+    assert not app.visible and not app.dancers
 
 
 def test_a_lone_hand_is_not_a_person():
@@ -80,7 +80,8 @@ def test_every_character_paints_something():
     QApplication.instance() or QApplication([])
     app = make()
     for character in range(len(CHARACTERS)):
-        app.character = character
+        app._preferred = character
+        app.camera_stopped()
         feed(app, pose(), 1.0 + character)
         img = QImage(1280, 720, QImage.Format_RGB32)
         p = QPainter(img)
@@ -101,3 +102,34 @@ def test_main_window_offers_the_dance():
     win._on_app_selected(8)
     assert win.projector_app is win.dance and win.proj_ctl.isVisibleTo(win)
     assert "no calibration" in win.mapping_label.text() or win._update_diagnostics() is None
+
+
+def shifted(dx, **moves):
+    p = pose(**moves)
+    p[:, 0] += dx
+    return p
+
+
+def test_three_people_each_get_their_own_character_and_switch_independently():
+    app = make()
+    left, mid, right = shifted(-0.3), pose(w15=(0.4, 0.05), w16=(0.6, 0.05)), shifted(0.3)
+    for i in range(40):
+        app.on_detection(Detection(None, 0, 1.0, poses=[left, mid, right]), 1.0 + i * 0.05)
+    assert len(app.dancers) == 3
+    by_x = sorted(app.dancers, key=lambda d: d.x)      # canvas is mirrored: right-most in the image is the left-most on screen
+    assert len({d.character for d in app.dancers}) == 3
+    switched = [d for d in app.dancers if d.progress == 1.0]
+    assert len(switched) == 1 and by_x[1] is switched[0]
+
+
+def test_people_are_tracked_between_frames_and_a_fourth_is_ignored():
+    app = make()
+    two = [shifted(-0.2), shifted(0.2)]
+    app.on_detection(Detection(None, 0, 1.0, poses=two), 1.0)
+    first = list(app.dancers)
+    app.on_detection(Detection(None, 0, 1.0, poses=[shifted(-0.19), shifted(0.21)]), 1.1)
+    assert app.dancers == first
+    app.on_detection(Detection(None, 0, 1.0, poses=[shifted(-0.3), shifted(0), shifted(0.3), shifted(0.4)]), 1.2)
+    assert len(app.dancers) <= 3
+    app.on_detection(Detection(None, 0, 1.0, poses=[shifted(-0.19)]), 3.0)
+    assert len(app.dancers) == 1

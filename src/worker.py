@@ -10,6 +10,7 @@ from . import config
 from .camera import Camera, CameraError
 from .hand_tracker import HAND_CONNECTIONS, INDEX_FINGER_TIP, Detection, HandTracker, ModelError
 from .metrics import RateCounter, TimingStat
+from .pose_tracker import POSE_CONNECTIONS, PoseTracker
 
 log = logging.getLogger(__name__)
 
@@ -26,6 +27,12 @@ def render_preview(frame: np.ndarray, det: Detection, mirror: bool, flip_vertica
         for p in pts:
             cv2.circle(img, tuple(p), 3, (0, 200, 255), -1)
         cv2.circle(img, tuple(pts[INDEX_FINGER_TIP]), 9, (0, 0, 255), 2)
+    if det.pose is not None:
+        pts = (det.pose[:, :2] * (img.shape[1], img.shape[0])).astype(int)
+        for a, b in POSE_CONNECTIONS:
+            cv2.line(img, tuple(pts[a]), tuple(pts[b]), (0, 255, 0), 2)
+        for i in (0, 15, 16, 27, 28):
+            cv2.circle(img, tuple(pts[i]), 5, (0, 200, 255), -1)
     if mirror or flip_vertical:
         img = cv2.flip(img, -1 if mirror and flip_vertical else 1 if mirror else 0)
     rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -41,6 +48,7 @@ class TrackingWorker(QThread):
         self._camera = camera
         self.mirror = True
         self.flip_vertical = False
+        self.pose = False                   # True: track the body (Mirror dance) instead of the hands
         self.num_hands = config.NUM_HANDS   # the UI raises this to 2 for typing; applied live in run()
         self.fps = RateCounter(config.METRICS_WINDOW_SECONDS)
         self.inference_ms = TimingStat()
@@ -57,6 +65,7 @@ class TrackingWorker(QThread):
         except ModelError as exc:
             self.failed.emit(str(exc))
             return
+        pose_tracker = None
         last_seq = -1
         try:
             while not self.isInterruptionRequested():
@@ -68,7 +77,9 @@ class TrackingWorker(QThread):
                 if self.num_hands != tracker.num_hands:
                     tracker.close()
                     tracker = HandTracker(num_hands=self.num_hands)
-                det = tracker.detect(frame)
+                if self.pose and pose_tracker is None:
+                    pose_tracker = PoseTracker()
+                det = (pose_tracker if self.pose else tracker).detect(frame)
                 self.processed += 1
                 self.fps.tick()
                 self.inference_ms.add(det.inference_ms)
@@ -79,6 +90,8 @@ class TrackingWorker(QThread):
             self.failed.emit(f"Tracking stopped: {exc}")
         finally:
             tracker.close()
+            if pose_tracker is not None:
+                pose_tracker.close()
 
     @property
     def dropped(self) -> int:

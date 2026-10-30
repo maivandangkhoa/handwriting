@@ -7,6 +7,13 @@ MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
     "hand_landmarker/float16/latest/hand_landmarker.task"
 )
+POSE_MODEL_PATH = ROOT / "assets" / "pose_landmarker_lite.task"
+POSE_MODEL_URL = (
+    "https://storage.googleapis.com/mediapipe-models/pose_landmarker/"
+    "pose_landmarker_lite/float16/latest/pose_landmarker_lite.task"
+)
+POSE_MIN_CONFIDENCE = 0.7    # a lone hand or a chair must not pass for a person
+DANCE_FILTER = (2.5, 0.05, 2.0)    # One Euro (min_cutoff, beta, d_cutoff) per body joint, canvas px
 
 # Camera: requested values; the camera may not honour them, actuals are read back.
 CAMERA_REQUEST_WIDTH = 1280

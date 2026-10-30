@@ -26,7 +26,7 @@ class ProjectorApps:
     def projector_app(self):
         """The projector app of the current mode, else None."""
         return {1: self.proj, 3: self.draw_proj, 4: self.piano, 5: self.gomoku, 6: self.coloring,
-                7: self.animals}.get(self.mode)
+                7: self.animals, 8: self.dance}.get(self.mode)
 
     def _load_piano_sounds(self, row: int):
         """The 24 tones are synthesised on first use of the piano, not at start-up."""

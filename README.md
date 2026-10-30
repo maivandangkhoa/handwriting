@@ -112,11 +112,19 @@ to `PICTURES` (8 x 10 letters, `.` = background).
 
 ## Animal colouring on a projector (sweep your hand like a brush)
 
-Choose *Animal colouring on projector*; calibrate like Air Drawing. Rest a fingertip on a colour at the left edge for half
-a second to pick it, then sweep your hand over the animal: the paint follows the finger (pen styles as in Air Drawing;
-*Always draws* suits small children) and stays inside the part of the animal where the stroke began, so it never spills
-over the lines. The grey arrow below the colours shows the next animal (cat, fish, duck); *Clear Canvas* wipes the paint.
-Add animals in `animal_pictures.py` (ellipses and polygons on a 100 x 100 sheet).
+Choose *Animal colouring on projector*; the projector calibrates itself when it is opened. Rest a fingertip on a colour
+at the left edge for half a second to pick it, then sweep your hand over the animal: the brush paints wherever the index
+finger is (whatever the pen style), and only inside the part of the animal under it, so it never spills over the lines.
+Curl the finger or make a fist to lift the brush. The grey arrow below the colours shows the next animal (cat, fish, duck);
+*Clear Canvas* wipes the paint. Add animals in `animal_pictures.py` (ellipses and polygons on a 100 x 100 sheet).
+
+## Mirror dance (a cartoon copies your whole body)
+
+Choose *Mirror dance on projector*, open the projector and start the camera; no calibration is needed. The camera runs
+MediaPipe Pose (`assets/pose_landmarker_lite.task`, fetched by `python scripts/download_model.py`) on one person and a
+cute cartoon animal (bunny, bear, cat, chick) copies the arms, legs and head, mirrored like a mirror, with fading trails behind the
+wrists. Stand 2-4 m from the camera so it sees your whole body; raise both hands above your head for a second to change
+character. Characters live in `dance_figure.py`, joint smoothing is `DANCE_FILTER` in `config.py`.
 
 ## Air Drawing on a projector (move your hand over the canvas)
 

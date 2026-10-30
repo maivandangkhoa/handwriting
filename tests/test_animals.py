@@ -64,7 +64,7 @@ def test_a_sweep_starting_outside_still_paints_where_it_enters_a_shape():
     assert any(i is not None for i, _ in app._runs(state.strokes[0]))
 
 
-def test_main_window_offers_the_animal_the_animal_colouring():
+def test_main_window_offers_the_animal_colouring():
     QApplication.instance() or QApplication([])
     from src.ui import MainWindow
     w = MainWindow()

@@ -19,7 +19,7 @@ def camera_text(camera, worker, extra: str = "") -> str:
 
 
 def mapping_text(mode: int, mapper, typing, proj) -> str:
-    if mode in (1, 3, 4, 5):
+    if mode in (1, 3, 4, 5, 6, 7):
         return f"Projector: {proj.phase}" + (" (calibrated)" if proj.mapper.calibrated and proj.phase == proj.ready_phase
                                               else " — press Calibrate Projector")
     if mode == 2:

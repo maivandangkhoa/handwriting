@@ -9,11 +9,14 @@ from . import config
 from .chess_game import ChessGame
 from .draw_view import paint_draw_furniture
 from .drawing import DrawingState
+from .coloring_game import ColoringGame
+from .coloring_view import paint_coloring
 from .gomoku_game import GomokuGame
 from .gomoku_view import paint_gomoku
 from .typing_view import paint_typing
 
 CANVAS_SIZE = (config.CANVAS_WIDTH, config.CANVAS_HEIGHT)
+BOARD_PAINTERS = {GomokuGame: paint_gomoku, ColoringGame: paint_coloring}    # other games are chess
 TARGETS = [(0.06, 0.08), (0.94, 0.08), (0.94, 0.92), (0.06, 0.92)]  # TL, TR, BR, BL as canvas fractions
 LIGHT, DARK = QColor(240, 217, 181), QColor(181, 136, 99)
 HIGHLIGHT = QColor(255, 235, 120)
@@ -25,7 +28,7 @@ class CanvasWidget(QWidget):
     def __init__(self, state: DrawingState):
         super().__init__()
         self.state = state
-        self.game: ChessGame | GomokuGame | None = None
+        self.game: ChessGame | GomokuGame | ColoringGame | None = None
         self.typing = None   # TypingMode when the typing app is active
         self.projector = None   # ProjectorSurface while an app runs on a projector (calibration patterns, ring)
         self.show_cursor = True   # off on the projector itself: the real finger is the cursor, a dot would light it
@@ -76,8 +79,8 @@ class CanvasWidget(QWidget):
             cursor = self.state.cursor
         else:
             hint = self.projector.hint if self.projector is not None else ""
-            if isinstance(self.game, GomokuGame):
-                paint_gomoku(p, to_w, s, self.game, hint)
+            if (painter := BOARD_PAINTERS.get(type(self.game))) is not None:
+                painter(p, to_w, s, self.game, hint)
             else:
                 self._paint_chess(p, to_w, s)
             cursor = self.game.pointer

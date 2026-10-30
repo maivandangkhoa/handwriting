@@ -102,6 +102,22 @@ first, then O (white). Five or more in a row, horizontally, vertically or diagon
 *New Game* starts over. Code: `gomoku_game.py` (rules), `gomoku_view.py` (painting), `projector_gomoku.py` (a
 `ProjectorChess` with a 10 x 10 marker layout).
 
+## Colouring book on a projector (for small children)
+
+Choose *Colouring book on projector*; calibrate like chess. Touch a colour in the palette column (the chosen one gets a
+white ring), then touch a cell of the picture to paint it. Every cell shows a dot of the colour it should be; when all
+cells match, "Well done!" appears. The grey arrow shows the next picture (heart, house, flower), the circular arrow or
+*New Game* wipes the current one. Code: `coloring_game.py`, `coloring_view.py`, `projector_coloring.py`; add pictures
+to `PICTURES` (8 x 10 letters, `.` = background).
+
+## Animal colouring on a projector (sweep your hand like a brush)
+
+Choose *Animal colouring on projector*; calibrate like Air Drawing. Rest a fingertip on a colour at the left edge for half
+a second to pick it, then sweep your hand over the animal: the paint follows the finger (pen styles as in Air Drawing;
+*Always draws* suits small children) and stays inside the part of the animal where the stroke began, so it never spills
+over the lines. The grey arrow below the colours shows the next animal (cat, fish, duck); *Clear Canvas* wipes the paint.
+Add animals in `animal_pictures.py` (ellipses and polygons on a 100 x 100 sheet).
+
 ## Air Drawing on a projector (move your hand over the canvas)
 
 Choose *Air Drawing on projector* in the Application list. The canvas is shown on the projector as a black page

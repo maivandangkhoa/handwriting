@@ -19,6 +19,12 @@ FRAME_INSET = 10      # the drawing frame, canvas px from the edge
 
 class ProjectorDraw(ProjectorSurface):
     ready_phase = "draw"
+    colors = COLORS
+    ring_color = (255, 255, 255)     # selection ring and pick arc: must stand out from the canvas
+
+    @property
+    def swatch_count(self) -> int:
+        return len(self.colors)
 
     def __init__(self, state: DrawingState, frame_size: tuple[int, int], canvas_size: tuple[int, int],
                  mirror: bool, flip_vertical: bool):
@@ -46,7 +52,7 @@ class ProjectorDraw(ProjectorSurface):
         on a swatch for PICK_S selects its colour."""
         i = None
         if point is not None:
-            for k in range(len(COLORS)):
+            for k in range(self.swatch_count):
                 if self.swatch_rect(k).adjusted(-REACH, -REACH, REACH, REACH).contains(*point):
                     i = k
                     break
@@ -55,10 +61,14 @@ class ProjectorDraw(ProjectorSurface):
         if i is None:
             return False
         self.pick = min((now - self._swatch_since) / PICK_S, 1.0)
-        if self.pick >= 1.0 and self.state.color != COLORS[i]:
-            self.state.color = COLORS[i]
-            self.state.end_stroke()      # the next stroke starts in the new colour
+        if self.pick >= 1.0:
+            self._select(i)
         return True
+
+    def _select(self, i: int) -> None:
+        if self.state.color != self.colors[i]:
+            self.state.color = self.colors[i]
+            self.state.end_stroke()      # the next stroke starts in the new colour
 
     def _geometry_found(self) -> None:
         self._enter("draw", "")

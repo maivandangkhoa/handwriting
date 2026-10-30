@@ -20,7 +20,7 @@ from .camera import Camera
 from .diagnostics import camera_text, mapping_text
 from .drawing import DrawingState
 from .filters import OneEuroFilter2D
-from .gesture import PinchDetector, PointDetector, pinch_point
+from .gesture import PinchDetector, PointDetector, index_extension, pinch_point
 from .preview import PreviewLabel
 from .piano_mode import ProjectorPiano
 from .projector_chess import ProjectorChess
@@ -41,7 +41,8 @@ class MainWindow(CameraLifecycle, ProjectorApps, QWidget):
         self.resize(1400, 800)
         self.camera = Camera()
         self.worker: TrackingWorker | None = None
-        self.state = DrawingState(OneEuroFilter2D())
+        self.smoother = OneEuroFilter2D()
+        self.state = DrawingState(self.smoother)
         self.game = ChessGame()
         self.gomoku_game = GomokuGame()
         self.coloring_game = ColoringGame()
@@ -255,13 +256,16 @@ class MainWindow(CameraLifecycle, ProjectorApps, QWidget):
             if surface is not None:
                 surface.on_palette(None, time.monotonic())
             return
-        raw = pinch_point(det.landmarks_px) if self.draw_style == 0 else det.tip_px
+        style = 1 if self.mode == 7 else self.draw_style     # a brush paints wherever the finger is
+        raw = pinch_point(det.landmarks_px) if style == 0 else det.tip_px
         point = mapper.map(raw)
-        pen_down = (pinching, True, pointing)[self.draw_style]
+        pen_down = (pinching, True, pointing)[style]
+        if self.mode == 7:
+            pen_down = index_extension(det.landmarks_px) > config.BRUSH_LIFT_RATIO     # curl the finger / make a fist = lift
         if surface is not None and surface.on_palette(point, time.monotonic()):
             pen_down = False
         self.state.update(point, pen_down=pen_down)
-        self.canvas.pinching = self.draw_style != 1 and pen_down      # the cursor turns green while the pen is down
+        self.canvas.pinching = style != 1 and pen_down      # the cursor turns green while the pen is down
 
     def _on_draw_mode(self, row: int):
         self.draw_style = row
@@ -276,6 +280,7 @@ class MainWindow(CameraLifecycle, ProjectorApps, QWidget):
         self.canvas.game = self.active_game
         self.canvas.typing = self.typing if row == 2 else None
         self.state.update(None)
+        self.smoother.min_cutoff, self.smoother.beta, self.smoother.d_cutoff = config.BRUSH_FILTER if row == 7 else config.DRAW_FILTER
         if row == 7:
             self.state.clear()
             self.state.color = self.animals.colors[0]

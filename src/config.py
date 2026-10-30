@@ -33,6 +33,8 @@ DEFAULT_MIRROR = False
 # higher BETA = less lag during fast movement.
 ONE_EURO_MIN_CUTOFF = 1.5
 ONE_EURO_BETA = 0.01
+DRAW_FILTER = (ONE_EURO_MIN_CUTOFF, ONE_EURO_BETA, 1.0)    # One Euro (min_cutoff, beta, d_cutoff) for pen drawing
+BRUSH_FILTER = (4.0, 0.08, 5.0)    # animal brush: a fast-opening filter, the brush must keep up with the finger
 
 # Camera orientation defaults (see README): vertical flip is for a camera mounted upside down.
 DEFAULT_FLIP_VERTICAL = False
@@ -51,6 +53,8 @@ PINCH_OFF_RATIO = 0.50
 # Index finger extension = wrist-to-fingertip / wrist-to-index-knuckle: about 2 when straight, under 1 when curled.
 POINT_ON_RATIO = 1.75    # straight enough to start drawing
 POINT_OFF_RATIO = 1.50   # curled this far lifts the pen (early, so the fingertip's inward swing leaves no tail)
+
+BRUSH_LIFT_RATIO = 1.25   # animal brush: index extension below this (finger curled, fist) lifts the brush
 
 # Chess board in logical canvas coordinates. The board leaves a lit margin: a finger near the edge casts its shadow
 # there, and the projector casts none outside the canvas.

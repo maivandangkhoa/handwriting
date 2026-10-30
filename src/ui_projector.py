@@ -2,12 +2,14 @@
 the piano's sounds. Mixed into MainWindow."""
 import logging
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 from .piano_sound import QtPlayer
 from .projector_window import ProjectorWindow
 
 log = logging.getLogger(__name__)
+AUTO_CALIBRATE_DELAY_MS = 1500    # the window needs a moment to appear and the projector to light up
 
 
 class ProjectorApps:
@@ -55,6 +57,13 @@ class ProjectorApps:
             self.proj_win = ProjectorWindow(self.state, self.canvas)
             self._bind_projector_window()
         self.proj_win.show_on(screens[min(index, len(screens) - 1)])
+        if self.worker is not None and self.projector_app is not None:     # calibrate straight away
+            QTimer.singleShot(AUTO_CALIBRATE_DELAY_MS, self._auto_calibrate)
+
+    def _auto_calibrate(self):
+        if self.worker is not None and self.projector_app is not None and self.proj_win is not None \
+                and self.proj_win.isVisible():
+            self._calibrate_projector()
 
     def _bind_projector_window(self):
         """The projector window shows what the current app shows; only the cursor differs (the finger is the cursor

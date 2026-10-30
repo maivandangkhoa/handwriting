@@ -87,13 +87,26 @@ class ProjectorAnimals(ProjectorDraw):
         pt = QPointF(*point)
         return next((i for i in reversed(range(len(self._shapes))) if self._shapes[i].contains(pt)), None)
 
+    def _runs(self, stroke) -> list[tuple[int, list]]:
+        """Split a stroke into stretches over one shape each (a stroke may cross shapes; paint stays inside the shape
+        the brush is over). A stretch keeps the neighbouring points so it reaches the shape edge without a gap."""
+        runs: list[tuple[int, list]] = []
+        owners = [self._shape_at(pt) for pt in stroke]
+        start = 0
+        for k in range(1, len(stroke) + 1):
+            if k == len(stroke) or owners[k] != owners[start]:
+                if owners[start] is not None:
+                    runs.append((owners[start], stroke[max(start - 1, 0):k + 1]))
+                start = k
+        return runs
+
     def paint(self, p: QPainter, to_w, scale: float) -> None:
         w, h = self.canvas_size
         p.fillRect(QRectF(to_w((0, 0)), to_w((w, h))), PAPER)
         owner: dict[int, list] = {}
         for stroke, color in zip(self.state.strokes, self.state.colors):
-            if (i := self._shape_at(stroke[0])) is not None:
-                owner.setdefault(i, []).append((stroke, color))
+            for i, run in self._runs(stroke):
+                owner.setdefault(i, []).append((run, color))
         p.save()
         p.translate(to_w((0, 0)))
         p.scale(scale, scale)

@@ -1,4 +1,4 @@
-"""Animal colouring: strokes stay inside the shape they started on; the palette picks colours and the next animal."""
+"""Animal colouring: paint stays inside the shape the brush is over; the palette picks colours and the next animal."""
 from PySide6.QtWidgets import QApplication
 
 from src.drawing import DrawingState
@@ -47,17 +47,24 @@ def test_paint_renders_and_clips_to_the_shape(tmp_path):
     state, app = make()
     state.color = (230, 50, 50)
     for x in range(600, 880, 10):
-        state.update((float(x), 420.0))          # a sweep across the body, running out past its right edge
+        state.update((float(x), 420.0))          # a sweep across the body, running out past the animal
     img = QImage(1280, 720, QImage.Format_RGB32)
     p = QPainter(img)
     app.paint(p, lambda pt: __import__("PySide6.QtCore", fromlist=["QPointF"]).QPointF(*pt), 1.0)
     p.end()
-    inside, outside = img.pixelColor(690, 420), img.pixelColor(870, 420)
+    inside, outside = img.pixelColor(690, 420), img.pixelColor(930, 420)
     assert inside.red() > 200 and inside.green() < 90
     assert not (outside.red() > 200 and outside.green() < 90)
 
 
-def test_main_window_offers_the_animal_colouring():
+def test_a_sweep_starting_outside_still_paints_where_it_enters_a_shape():
+    state, app = make()
+    for x in range(100, 700, 20):
+        state.update((float(x), 420.0))          # starts on the bare paper left of the animal
+    assert any(i is not None for i, _ in app._runs(state.strokes[0]))
+
+
+def test_main_window_offers_the_animal_the_animal_colouring():
     QApplication.instance() or QApplication([])
     from src.ui import MainWindow
     w = MainWindow()

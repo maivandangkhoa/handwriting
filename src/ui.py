@@ -23,6 +23,8 @@ from .filters import OneEuroFilter2D
 from .gesture import PinchDetector, PointDetector, index_extension, pinch_point
 from .preview import PreviewLabel
 from .piano_mode import ProjectorPiano
+from .dance_controls import DanceControls
+from .dance_music import SONG_NAMES, DancePlayer
 from .projector_dance import ProjectorDance
 from .projector_chess import ProjectorChess
 from .projector_gomoku import ProjectorGomoku
@@ -79,6 +81,13 @@ class MainWindow(CameraLifecycle, ProjectorApps, QWidget):
         self.typing_ctl.auto_toggled.connect(self._on_auto_detect)
         self.typing_ctl.auto_clicked.connect(lambda: self.typing.maybe_auto_calibrate(self.camera.latest, time.monotonic(), force=True))
         self.typing_ctl.setVisible(False)
+        self.dance_music = None     # the DancePlayer, created the first time a song is chosen
+        self.dance.set_max_people(self.settings.value("dance_people", config.DANCE_MAX_PEOPLE, type=int))
+        self.dance_song = self.settings.value("dance_song", 1, type=int)    # 0 = off, then dance_music.SONG_NAMES
+        self.dance_ctl = DanceControls(self.dance.max_people, self.dance_song)
+        self.dance_ctl.people_changed.connect(self._on_dance_people)
+        self.dance_ctl.music_changed.connect(self._on_dance_song)
+        self.dance_ctl.setVisible(False)
         self.last_tip_raw: tuple[float, float] | None = None
         self.calib_points: list[tuple[float, float]] = []
         self.calibrating = False
@@ -165,7 +174,7 @@ class MainWindow(CameraLifecycle, ProjectorApps, QWidget):
             side.addWidget(w)
         side.addLayout(cam_row)
         for w in (self.start_btn, self.draw_mode_box, self.draw_chk, self.mirror_chk, self.flip_chk, clear, self.new_game_btn, self.calib_btn,
-                  self.confirm_btn, reset, self.typing_ctl, self.proj_ctl, self.mapping_label, self.hint, self.diag):
+                  self.confirm_btn, reset, self.typing_ctl, self.dance_ctl, self.proj_ctl, self.mapping_label, self.hint, self.diag):
             side.addWidget(w)
         side.addStretch(1)
         panel = QWidget()
@@ -309,11 +318,36 @@ class MainWindow(CameraLifecycle, ProjectorApps, QWidget):
         self.calib_btn.setVisible(row in (0, 2))
         self.proj_ctl.setVisible(row in (1, 3, 4, 5, 6, 7, 8))
         self._load_piano_sounds(row)
+        self.dance_ctl.setVisible(row == 8)
+        self._play_dance_music()
         self.typing_ctl.setVisible(row == 2)
         self.calib_btn.setText("Calibrate Keyboard (click 4 corners)" if row == 2 else "Calibrate")
         self.message = ("Make the preview upright (Mirror / Flip Vertical), then Calibrate Keyboard."
                         if row == 2 else "")
         self.canvas.update()
+
+    def _on_dance_people(self, n: int):
+        self.settings.setValue("dance_people", n)
+        self.dance.set_max_people(n)
+
+    def _on_dance_song(self, index: int):
+        self.settings.setValue("dance_song", index)
+        self.dance_song = index
+        self._play_dance_music()
+
+    def _play_dance_music(self):
+        """The chosen song loops while the Mirror dance is the current app and is silent otherwise."""
+        song = SONG_NAMES[self.dance_song - 1] if self.mode == 8 and self.dance_song > 0 else None
+        if self.dance_music is None:
+            if song is None:
+                return
+            try:
+                self.dance_music = DancePlayer()
+            except Exception as exc:   # no audio support: the dance still works, silently
+                log.error("Dance music unavailable: %s", exc)
+                self.dance.message = f"Music unavailable ({exc})"
+                return
+        self.dance_music.play(song)
 
     def _on_auto_detect(self, on: bool):
         self.settings.setValue("auto_detect_keyboard", on)

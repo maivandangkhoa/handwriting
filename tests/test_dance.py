@@ -133,3 +133,23 @@ def test_people_are_tracked_between_frames_and_a_fourth_is_ignored():
     assert len(app.dancers) <= 3
     app.on_detection(Detection(None, 0, 1.0, poses=[shifted(-0.19)]), 3.0)
     assert len(app.dancers) == 1
+
+
+def test_max_people_limits_and_trims_dancers():
+    app = make()
+    app.set_max_people(1)
+    feed_two = [pose(), pose(**{"11": (0.15, 0.35), "12": (0.25, 0.35), "23": (0.17, 0.6), "24": (0.23, 0.6)})]
+    app.on_detection(Detection(None, 0, 0, pose=feed_two[0], poses=feed_two), 0.0)
+    assert len(app.dancers) == 1
+    app.set_max_people(3)
+    app.on_detection(Detection(None, 0, 0, pose=feed_two[0], poses=feed_two), 0.1)
+    assert len(app.dancers) == 2
+    app.set_max_people(1)
+    assert len(app.dancers) == 1
+
+
+def test_songs_render_seamless_loops():
+    from src.dance_music import RATE, SONG_NAMES, render
+    for name in SONG_NAMES:
+        audio = render(name)
+        assert audio.size > 20 * RATE and abs(audio).max() <= 0.81 and abs(audio).max() > 0.5

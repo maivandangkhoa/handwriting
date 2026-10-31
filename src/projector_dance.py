@@ -1,4 +1,4 @@
-"""Mirror dance: the camera watches up to three people and a cartoon character per person copies the moves.
+"""Mirror dance: the camera watches one to three people and a cartoon character per person copies the moves.
 
 No geometry calibration: the canvas shows what the camera sees (mirrored, like a mirror), so the character mirrors the
 person. Raise both hands above the head for a second to change character.
@@ -91,6 +91,7 @@ class ProjectorDance(ProjectorSurface):
         super().__init__(frame_size, canvas_size, mirror, flip_vertical)
         self.phase, self.message = "play", ""
         self.dancers: list[Dancer] = []
+        self.max_people = config.DANCE_MAX_PEOPLE     # how many bodies to follow (the side panel sets 1..DANCE_MAX_PEOPLE)
         self._preferred = 0           # the character the last person picked: where the next newcomer starts looking
         self._now = 0.0
 
@@ -134,7 +135,7 @@ class ProjectorDance(ProjectorSurface):
             if near is not None and abs(near.x - hip_x) <= MATCH_DIST * self.canvas_size[0]:
                 unclaimed.remove(near)
                 dancer = near
-            elif len(self.dancers) < config.DANCE_MAX_PEOPLE:
+            elif len(self.dancers) < self.max_people:
                 dancer = self._new_dancer()
                 self.dancers.append(dancer)
             else:
@@ -143,6 +144,11 @@ class ProjectorDance(ProjectorSurface):
             if dancer.watch_raised_hands(now):
                 dancer.character = self._preferred = self._free_character(dancer.character + 1)
         self.dancers = [d for d in self.dancers if now - d.seen < LOST_S]
+
+    def set_max_people(self, n: int) -> None:
+        """Follow at most `n` people; if fewer are wanted than are on stage, the last to arrive step off."""
+        self.max_people = n
+        del self.dancers[n:]
 
     def stats_text(self) -> str:
         names = ", ".join(d.name for d in self.dancers) or "-"

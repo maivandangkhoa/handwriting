@@ -147,9 +147,20 @@ class CanvasWidget(QWidget):
         font = QFont("Apple Symbols")
         font.setPixelSize(int(sq * 0.8))
         p.setFont(font)
+        carried = g.carry and g.held is not None and g.pointer is not None
         for square, piece in g.board.piece_map().items():
             ox, oy = g.square_origin(square)
+            if carried and square == g.held:
+                p.setOpacity(0.3)       # the lifted piece leaves a faint ghost on its square
             self._draw_piece(p, to_w((ox, oy)), sq, piece)
+            p.setOpacity(1.0)
+        if carried:
+            size = sq * 1.25
+            big = QFont("Apple Symbols")
+            big.setPixelSize(int(size * 0.8))
+            p.setFont(big)
+            c = to_w(g.pointer)
+            self._draw_piece(p, QPointF(c.x() - size / 2, c.y() - size / 2), size, g.board.piece_at(g.held))
         p.setPen(QColor(235, 235, 235))
         info = QFont()
         info.setPixelSize(int(26 * scale) + 4)

@@ -60,7 +60,7 @@ class MainWindow(CameraLifecycle, ProjectorApps, QWidget):
         self.mapper = CoordinateMapper((config.CAMERA_REQUEST_WIDTH, config.CAMERA_REQUEST_HEIGHT), CANVAS_SIZE,
                                        mirror=mirror, flip_vertical=flip_v)
         self.typing = TypingMode(self.mapper.frame_size, mirror, flip_v)
-        self.proj = ProjectorChess(self.game, self.mapper.frame_size, CANVAS_SIZE, mirror, flip_v)
+        self.proj = ProjectorChess(self.game, self.mapper.frame_size, CANVAS_SIZE, mirror, flip_v, drag_mode=True)
         self.draw_proj = ProjectorDraw(self.state, self.mapper.frame_size, CANVAS_SIZE, mirror, flip_v)
         self.piano = ProjectorPiano(self.mapper.frame_size, CANVAS_SIZE, mirror, flip_v)
         self.gomoku = ProjectorGomoku(self.gomoku_game, self.mapper.frame_size, CANVAS_SIZE, mirror, flip_v)
@@ -119,7 +119,7 @@ class MainWindow(CameraLifecycle, ProjectorApps, QWidget):
         self.diag.setStyleSheet("font-family: Menlo, monospace;")
 
         self.app_box = QComboBox()
-        self.app_box.addItems(["Air Drawing", "Chess on projector (touch the pieces)", "Keyboard typing (camera reads keys)",
+        self.app_box.addItems(["Air Drawing", "Chess on projector (point at a piece to drag it)", "Keyboard typing (camera reads keys)",
                                 "Air Drawing on projector (move your hand over the canvas)",
                                 "Piano on projector (tap the keys to play)",
                                 "Gomoku (cờ caro) on projector (touch a cell)",

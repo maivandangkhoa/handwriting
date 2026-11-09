@@ -11,6 +11,7 @@ class ChessGame:
     def __init__(self, origin: tuple[float, float] = config.CHESS_ORIGIN, square: float = config.CHESS_SQUARE):
         self.origin, self.square = origin, square
         self.pointer: Point | None = None
+        self.carry = False                    # draw the selected piece following the fingertip (drag mode)
         self._was_touching = False
         self._slide_from: int | None = None   # square where the current touch picked the piece up (slide-to-move)
         self.new_game()

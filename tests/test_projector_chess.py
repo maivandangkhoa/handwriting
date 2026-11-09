@@ -22,7 +22,7 @@ class Rig:
 
     def __init__(self):
         self.game = ChessGame()
-        self.app = ProjectorChess(self.game, (1280, 720), CANVAS, mirror=False, flip_vertical=False)
+        self.app = ProjectorChess(self.game, (1280, 720), CANVAS, mirror=False, flip_vertical=False, drag_mode=False)
         self.t = 0.0
         self.seed = 0
 
@@ -170,3 +170,23 @@ def test_rejected_shadow_references_leave_point_and_hold():
         rig.step(ring, height=0, n=int(1.4 / DT) + 3)
         rig.step(ring, height=0, n=int(1.4 / DT) + 3)
     assert rig.app.phase == "play" and "Point-and-hold" in rig.app.message
+
+
+def test_drag_mode_finger_only_lifts_carries_and_drops():
+    """No shadow, no calibration of it: hold on a piece to lift it, hold on a legal square to drop it."""
+    game = ChessGame()
+    app = ProjectorChess(game, (1280, 720), CANVAS, mirror=False, flip_vertical=False, drag_mode=True)
+    assert game.carry and app.drag_mode
+    app._geometry_found()
+    assert app.phase == "play"
+    centre = lambda sq: (game.square_origin(sq)[0] + game.square / 2, game.square_origin(sq)[1] + game.square / 2)
+    t = 0.0
+    for sq in (chess.E2, chess.E4):
+        for _ in range(60):                     # ~2 s still on the square
+            t += DT
+            pointer = centre(sq)
+            game.update(pointer, app._hold(pointer, t))
+        game.update(None, False)
+        if sq == chess.E2:
+            assert game.held == chess.E2
+    assert game.board.piece_at(chess.E4) is not None and game.board.piece_at(chess.E2) is None

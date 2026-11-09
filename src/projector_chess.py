@@ -21,7 +21,7 @@ from .touch_detector import ShadowTouchDetector
 log = logging.getLogger(__name__)
 HOLD_S = 1.4          # how long the fingertip must stay on / above the ring for a reference
 SETTLE_S = 0.5        # ...of which the first part is discarded while the finger gets there
-DWELL_S = 0.6         # point-and-hold: a fingertip kept still this long counts as a touch, shadow or not
+DWELL_S = 0.3         # point-and-hold: a fingertip kept still this long counts as a touch, shadow or not
 DWELL_RADIUS = 0.4    # ...still = within this many squares of where the hold began
 DWELL_TAP_S = 0.15    # how long the synthetic touch lasts
 MAX_REFERENCE_TRIES = 2   # shadow references that fail this often leave point-and-hold as the only touch
@@ -31,13 +31,16 @@ RING_TOLERANCE = 1.2  # fingertip must be within this many squares of the ring
 
 class ProjectorChess(ProjectorSurface):
     ready_note = "Ready: touch a piece, then touch where it should go."
+    drag_note = "Point your index finger at a piece and hold still to pick it up, drag it, then hold still on the square to drop it."
     hold_note = ("The shadow cannot tell touch from hover here. Point-and-hold: keep your fingertip on a square "
                  "for a second to select it, then hold on the destination.")
 
     def __init__(self, game: ChessGame, frame_size: tuple[int, int], canvas_size: tuple[int, int],
-                 mirror: bool, flip_vertical: bool):
+                 mirror: bool, flip_vertical: bool, drag_mode: bool = False):
         super().__init__(frame_size, canvas_size, mirror, flip_vertical)
         self.game = game
+        self.drag_mode = drag_mode     # index finger only: hold on a piece to lift it, move, hold to drop (no shadow)
+        game.carry = drag_mode
         self.detector = ShadowTouchDetector()
         self.smoother = OneEuroFilter2D()
         self.sample = None
@@ -113,6 +116,10 @@ class ProjectorChess(ProjectorSurface):
     def _geometry_found(self) -> None:
         view = self.canvas_in_view()
         self.detector.set_region([self.mapper.to_view(p) for p in view] if view else None)   # flips are involutions
+        if self.drag_mode:
+            self.hold_only = True
+            self._enter("play", self.drag_note, now=None)
+            return
         self.detector.invalidate()
         self.detector.set_ambient(self._dark)    # the black-canvas frame: room light without the projector
         self._enter("learn", "Canvas found. Keep your hand away while the empty board is memorised.")
@@ -191,7 +198,18 @@ class ProjectorChess(ProjectorSurface):
         mapped = self.mapper.map(det.tip_px)
         return self.smoother.update(mapped) if mapped is not None else None
 
+    def _drag_step(self, det: Detection, now: float) -> None:
+        pointer = self._pointer(det)
+        if det.landmarks_px is None or pointer is None:
+            self._anchor, self.dwell = None, 0.0
+            self.game.update(None, False)
+            return
+        self.message = self.drag_note
+        self.game.update(pointer, self._hold(pointer, now))
+
     def _play_step(self, det: Detection, now: float) -> None:
+        if self.drag_mode:
+            return self._drag_step(det, now)
         if self.game.revision != self._revision:    # the projected board changed: its empty-scene model is stale
             self._revision = self.game.revision
             self.detector.invalidate()
